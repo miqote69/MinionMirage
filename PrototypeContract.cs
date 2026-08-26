@@ -7,11 +7,12 @@ internal static class PrototypeContract
         new(
             SourceCompanionRowId: 331,
             SourceName: "Y'shtola",
-            TargetKind: PrototypeTargetKind.EventNpc,
-            TargetRowId: 1003782,
+            TargetKind: PrototypeTargetKind.BattleNpc,
+            TargetRowId: 13910,
             TargetModelCharaRowId: 0,
             TargetName: "Y'shtola",
-            IsHuman: true),
+            IsHuman: true,
+            TargetModelScale: 1.0f),
         new(
             SourceCompanionRowId: 232,
             SourceName: "Scathach",
@@ -19,15 +20,26 @@ internal static class PrototypeContract
             TargetRowId: 6479,
             TargetModelCharaRowId: 1689,
             TargetName: "Scathach",
-            IsHuman: false),
+            IsHuman: false,
+            TargetModelScale: null),
         new(
             SourceCompanionRowId: 218,
             SourceName: "Alisaie",
-            TargetKind: PrototypeTargetKind.BattleNpc,
-            TargetRowId: 10067,
+            TargetKind: PrototypeTargetKind.EventNpc,
+            TargetRowId: 1017687,
             TargetModelCharaRowId: 0,
-            TargetName: "Alisaie's Avatar",
-            IsHuman: true),
+            TargetName: "Alisaie",
+            IsHuman: true,
+            TargetModelScale: 0.97f),
+        new(
+            SourceCompanionRowId: 398,
+            SourceName: "Gaia",
+            TargetKind: PrototypeTargetKind.BattleNpc,
+            TargetRowId: 17830,
+            TargetModelCharaRowId: 4436,
+            TargetName: "Gaia",
+            IsHuman: false,
+            TargetModelScale: null),
     ];
 
     public static bool TryGetMapping(uint sourceCompanionRowId, out PrototypeMapping mapping)
@@ -50,4 +62,5 @@ internal sealed record PrototypeMapping(
     uint TargetRowId,
     uint TargetModelCharaRowId,
     string TargetName,
-    bool IsHuman);
+    bool IsHuman,
+    float? TargetModelScale);

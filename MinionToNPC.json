@@ -2,7 +2,7 @@
   "Author": "miqote69",
   "Name": "Minion To NPC",
   "Punchline": "Shows mapped NPC appearances in place of selected minions.",
-  "Description": "Local prototype that redraws fixed Companion mappings as Y'shtola, Scathach, or Alisaie's Avatar.",
+  "Description": "Local prototype that redraws fixed Companion mappings as Y'shtola, Scathach, Alisaie, or Gaia.",
   "ApplicableVersion": "any",
   "Tags": [
     "minion",

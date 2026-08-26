@@ -55,7 +55,8 @@ internal sealed record RuntimeMappingObservation(
     uint TargetRowId,
     uint TargetModelCharaRowId,
     string TargetName,
-    bool IsHuman);
+    bool IsHuman,
+    float? TargetModelScale);
 
 internal sealed class RuntimeStateReporter
 {

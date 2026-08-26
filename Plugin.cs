@@ -1,10 +1,16 @@
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.IoC;
+using Dalamud.Interface.Textures;
+using Dalamud.Interface.Textures.TextureWraps;
+using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
+using MinionToNPC.Localization;
+using System.Reflection;
+using CompanionSheet = Lumina.Excel.Sheets.Companion;
 using GameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 using NativeVisibilityFlags = FFXIVClientStructs.FFXIV.Client.Game.Object.VisibilityFlags;
 
@@ -13,16 +19,21 @@ namespace MinionToNPC;
 public sealed unsafe class Plugin : IDalamudPlugin
 {
     public const string DisplayName = "Minion To NPC";
+    private const int CharacterBaseModelScaleOffset = 0x2A4;
 
     [PluginService] private static IObjectTable ObjectTable { get; set; } = null!;
     [PluginService] private static IFramework Framework { get; set; } = null!;
     [PluginService] private static IDataManager DataManager { get; set; } = null!;
-    [PluginService] private static IGameInteropProvider Interop { get; set; } = null!;
+    [PluginService] private static IClientState ClientState { get; set; } = null!;
+    [PluginService] private static ITextureProvider TextureProvider { get; set; } = null!;
     [PluginService] private static IPluginLog Log { get; set; } = null!;
 
-    private readonly NativeDrawObjectInjector injector;
+    private readonly IDalamudPluginInterface pluginInterface;
     private readonly IReadOnlyDictionary<uint, AppearancePayload> desiredBySource;
+    private readonly IReadOnlyDictionary<uint, uint> sourceModelCharaBySource;
     private readonly RuntimeStateReporter stateReporter;
+    private readonly ConfigWindow configWindow;
+    private readonly WindowSystem windowSystem = new("MinionToNPC");
     private TrackedActor? tracked;
     private ActorIdentity? failedIdentity;
     private TargetScanResult lastScan = TargetScanResult.NotStarted;
@@ -31,13 +42,43 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private string? lastError;
     private bool disposed;
 
+    public Configuration Configuration { get; }
+
+    public Localizer Localizer { get; }
+
+    public static string DisplayVersion =>
+        typeof(Plugin).Assembly
+            .GetCustomAttributes(false)
+            .OfType<AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()
+            ?.InformationalVersion
+            .Split('+')[0]
+        ?? typeof(Plugin).Assembly.GetName().Version?.ToString(3)
+        ?? "0.0.0";
+
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
+        this.pluginInterface = pluginInterface;
+        Configuration = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        Configuration.DisabledCompanionRowIds ??= [];
+        Localizer = new Localizer(Configuration, ClientState);
+        configWindow = new ConfigWindow(this);
+        windowSystem.AddWindow(configWindow);
+        pluginInterface.UiBuilder.Draw += windowSystem.Draw;
+        pluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
+
         stateReporter = new RuntimeStateReporter(pluginInterface.ConfigDirectory.FullName, Log);
         desiredBySource = PrototypeContract.Mappings.ToDictionary(
             mapping => mapping.SourceCompanionRowId,
             mapping => TargetAppearanceResolver.Resolve(DataManager, mapping));
-        injector = new NativeDrawObjectInjector(Interop);
+        var companionSheet = DataManager.GetExcelSheet<CompanionSheet>();
+        sourceModelCharaBySource = PrototypeContract.Mappings.ToDictionary(
+            mapping => mapping.SourceCompanionRowId,
+            mapping => companionSheet.TryGetRow(mapping.SourceCompanionRowId, out var companion)
+                && companion.Model.RowId is not 0
+                    ? companion.Model.RowId
+                    : throw new InvalidOperationException(
+                        $"Companion {mapping.SourceCompanionRowId} has no source ModelChara."));
         Framework.Update += OnFrameworkUpdate;
 
         Log.Information(
@@ -54,10 +95,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         disposed = true;
         Framework.Update -= OnFrameworkUpdate;
+        pluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
+        pluginInterface.UiBuilder.Draw -= windowSystem.Draw;
 
         if (tracked is not null && TryResolve(tracked.Identity, out var current))
         {
-            if (!TryImmediateRedraw(current, tracked.Original))
+            if (!TryApplyAppearance(current, tracked.Original, tracked.OriginalModelScale))
             {
                 Log.Error("Failed to restore the tracked Companion while unloading.");
                 lastError = "unload_restore_failed";
@@ -67,8 +110,95 @@ public sealed unsafe class Plugin : IDalamudPlugin
         SetTransition("disposed");
         tracked = null;
         PublishRuntimeState("disposed", force: true);
-        injector.Dispose();
+        windowSystem.RemoveAllWindows();
+        configWindow.Dispose();
     }
+
+    public void SetUiLanguage(UiLanguage language)
+    {
+        if (Configuration.UiLanguage == language)
+            return;
+
+        Configuration.UiLanguage = language;
+        SaveConfiguration();
+    }
+
+    public void SetMappingEnabled(uint companionRowId, bool enabled)
+    {
+        if (!PrototypeContract.TryGetMapping(companionRowId, out _))
+            return;
+
+        var changed = enabled
+            ? Configuration.DisabledCompanionRowIds.Remove(companionRowId)
+            : Configuration.DisabledCompanionRowIds.Add(companionRowId);
+        if (changed)
+            SaveConfiguration();
+    }
+
+    public void SetAllMappingsEnabled(bool enabled)
+    {
+        var changed = false;
+        foreach (var mapping in PrototypeContract.Mappings)
+        {
+            changed |= enabled
+                ? Configuration.DisabledCompanionRowIds.Remove(mapping.SourceCompanionRowId)
+                : Configuration.DisabledCompanionRowIds.Add(mapping.SourceCompanionRowId);
+        }
+
+        if (changed)
+            SaveConfiguration();
+    }
+
+    internal string GetCompanionName(PrototypeMapping mapping)
+    {
+        try
+        {
+            if (DataManager.GetExcelSheet<CompanionSheet>(ClientState.ClientLanguage)
+                .TryGetRow(mapping.SourceCompanionRowId, out var companion))
+            {
+                var name = companion.Singular.ToString();
+                if (!string.IsNullOrWhiteSpace(name))
+                    return name;
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Debug(
+                exception,
+                "Failed to read Companion name for row {CompanionRowId}.",
+                mapping.SourceCompanionRowId);
+        }
+
+        return mapping.SourceName;
+    }
+
+    public bool TryGetCompanionIcon(uint companionRowId, out IDalamudTextureWrap? texture)
+    {
+        texture = null;
+        try
+        {
+            if (!DataManager.GetExcelSheet<CompanionSheet>().TryGetRow(companionRowId, out var companion))
+                return false;
+
+            var iconId = (uint)companion.Icon;
+            if (iconId == 0)
+                return false;
+
+            texture = TextureProvider.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrEmpty();
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Log.Debug(exception, "Failed to load Companion icon for row {CompanionRowId}.", companionRowId);
+            return false;
+        }
+    }
+
+    private void ToggleConfigUi()
+        => configWindow.Toggle();
+
+    private void SaveConfiguration()
+        => pluginInterface.SavePluginConfig(Configuration);
 
     private void OnFrameworkUpdate(IFramework framework)
     {
@@ -96,7 +226,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             && (candidate is null || !tracked.Identity.Matches(candidate)))
         {
             if (TryResolve(tracked.Identity, out var oldActor)
-                && !TryImmediateRedraw(oldActor, tracked.Original))
+                && !TryApplyAppearance(oldActor, tracked.Original, tracked.OriginalModelScale))
             {
                 Log.Error("Failed to restore the previous tracked Companion before identity changed.");
                 lastError = "previous_actor_restore_failed";
@@ -119,13 +249,20 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         if (tracked is null)
         {
-            if (!TryCapture(candidate, out var original))
+            if (!IsSourceModelReady(candidate, mapping))
+            {
+                SetTransition("source_model_pending");
+                return;
+            }
+
+            if (!TryCapture(candidate, out var original)
+                || !TryCaptureModelScale(candidate, mapping.TargetModelScale, out var originalModelScale))
             {
                 SetTransition("capture_not_ready");
                 return;
             }
 
-            tracked = new TrackedActor(identity, original, mapping, ApplyStage.WriteVisible);
+            tracked = new TrackedActor(identity, original, originalModelScale, mapping, ApplyStage.Pending);
             lastError = null;
             SetTransition("target_acquired");
             Log.Information(
@@ -137,10 +274,18 @@ public sealed unsafe class Plugin : IDalamudPlugin
         AdvanceTrackedActor();
     }
 
+    private bool IsSourceModelReady(IGameObject actor, PrototypeMapping mapping)
+    {
+        var character = (Character*)actor.Address;
+        return character != null
+            && sourceModelCharaBySource.TryGetValue(mapping.SourceCompanionRowId, out var expectedModelCharaId)
+            && character->ModelContainer.ModelCharaId == checked((int)expectedModelCharaId);
+    }
+
     private void AdvanceTrackedActor()
     {
         var state = tracked;
-        if (state is null || state.Stage == ApplyStage.Applied)
+        if (state is null || state.Stage == ApplyStage.Redrawn)
             return;
 
         if (!TryResolve(state.Identity, out var current))
@@ -150,42 +295,29 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
 
         var desired = desiredBySource[state.Mapping.SourceCompanionRowId];
-        var next = state.Stage switch
-        {
-            ApplyStage.WriteVisible when TryWrite(current, desired) => ApplyStage.Disable,
-            ApplyStage.Disable when TryDisable(current) => ApplyStage.WriteHidden,
-            ApplyStage.WriteHidden when TryWrite(current, desired) => ApplyStage.Enable,
-            ApplyStage.Enable when TryEnable(current, desired) => ApplyStage.Finalize,
-            ApplyStage.Finalize when TryFinalizeAppearance(current, desired, state.Original) => ApplyStage.Verify,
-            ApplyStage.Verify when IsApplied(current, desired, state.Original) => ApplyStage.Applied,
-            _ => ApplyStage.Failed,
-        };
-
-        if (next == ApplyStage.Failed)
+        if (!TryApplyAppearance(current, desired, state.Mapping.TargetModelScale))
         {
             Log.Error(
-                "{TargetName} appearance apply failed at stage {Stage}; attempting one rollback.",
-                state.Mapping.TargetName,
-                state.Stage);
-            lastError = $"appearance_apply_failed_at_{state.Stage}";
-            SetTransition($"apply_failed_at_{state.Stage}");
+                "{TargetName} backing write or full redraw call failed; stopping for the current actor without rollback.",
+                state.Mapping.TargetName);
+            lastError = "appearance_redraw_failed";
+            SetTransition("appearance_redraw_failed");
             FailCurrentActor();
             return;
         }
 
-        tracked = state with { Stage = next };
-        SetTransition($"apply_{state.Stage}_to_{next}");
-        if (next == ApplyStage.Applied)
-        {
-            lastError = null;
-            Log.Information(
-                "{TargetName} appearance applied. Companion={CompanionRowId}, {TargetKind}={TargetRowId}, ModelChara={ModelCharaRowId}.",
-                state.Mapping.TargetName,
-                state.Mapping.SourceCompanionRowId,
-                state.Mapping.TargetKind,
-                state.Mapping.TargetRowId,
-                desired.ModelCharaId);
-        }
+        tracked = state with { Stage = ApplyStage.Redrawn };
+        lastError = null;
+        SetTransition("appearance_redrawn");
+        Log.Information(
+            "{TargetName} backing written and full redraw requested. Companion={CompanionRowId}, {TargetKind}={TargetRowId}, ModelChara={ModelCharaRowId}.",
+            state.Mapping.TargetName,
+            state.Mapping.SourceCompanionRowId,
+            state.Mapping.TargetKind,
+            state.Mapping.TargetRowId,
+            desired.ModelCharaId);
+        if (state.Mapping.TargetModelScale is { } modelScale)
+            Log.Information("{TargetName} draw-model scale set to {ModelScale}.", state.Mapping.TargetName, modelScale);
     }
 
     private void FailCurrentActor()
@@ -194,19 +326,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (state is null)
             return;
 
-        if (TryResolve(state.Identity, out var current)
-            && !TryImmediateRedraw(current, state.Original))
-        {
-            Log.Error("Rollback failed for the current mapped minion.");
-            lastError = "rollback_failed";
-            SetTransition("rollback_failed");
-        }
-
         failedIdentity = state.Identity;
         tracked = null;
     }
 
-    private static TargetScanResult ScanTargets()
+    private TargetScanResult ScanTargets()
     {
         var localPlayer = ObjectTable.LocalPlayer;
         var localPlayerAvailable = localPlayer is not null && localPlayer.Address != nint.Zero;
@@ -223,7 +347,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
             var ownership = ObserveOwnership(candidate, localPlayerAvailable ? localPlayer : null, valid);
             observations.Add(ObserveCompanion(candidate, valid, ownership));
 
-            if (!valid || !PrototypeContract.TryGetMapping(candidate.BaseId, out var mapping))
+            if (!valid
+                || !PrototypeContract.TryGetMapping(candidate.BaseId, out var mapping)
+                || !Configuration.IsMappingEnabled(candidate.BaseId))
                 continue;
 
             validSourceCount++;
@@ -355,151 +481,54 @@ public sealed unsafe class Plugin : IDalamudPlugin
         return true;
     }
 
-    private static bool TryDisable(IGameObject actor)
-    {
-        var gameObject = (GameObject*)actor.Address;
-        if (gameObject == null)
-            return false;
-
-        gameObject->RenderFlags |= NativeVisibilityFlags.Model;
-        gameObject->DisableDraw();
-        return true;
-    }
-
-    private bool TryEnable(IGameObject actor, AppearancePayload appearance)
-    {
-        var gameObject = (GameObject*)actor.Address;
-        if (gameObject == null)
-            return false;
-
-        gameObject->RenderFlags &= ~NativeVisibilityFlags.Model;
-        return injector.Invoke(gameObject, appearance)
-            && gameObject->DrawObject != null;
-    }
-
-    private static bool TryFinalizeAppearance(
+    private static bool TryCaptureModelScale(
         IGameObject actor,
-        AppearancePayload appearance,
-        AppearancePayload? originalBacking = null)
+        float? targetModelScale,
+        out float? originalModelScale)
     {
+        originalModelScale = null;
+        if (targetModelScale is null)
+            return true;
+
         var gameObject = (GameObject*)actor.Address;
         var characterBase = gameObject == null ? null : gameObject->GetCharacterBase();
-        var character = (Character*)actor.Address;
-        if (characterBase == null || character == null)
+        if (characterBase == null)
             return false;
 
-        if (!appearance.IsHuman)
-            return characterBase->GetModelType() != CharacterBase.ModelType.Human;
-
-        if (characterBase->GetModelType() != CharacterBase.ModelType.Human
-            || appearance.Equipment.Length != character->DrawData.EquipmentModelIds.Length)
-        {
-            return false;
-        }
-
-        if (IsYoung(appearance))
-        {
-            var human = (Human*)characterBase;
-            if (!appearance.Customize.AsSpan().SequenceEqual(human->Customize.Data))
-                return false;
-
-            return originalBacking is null || TryWrite(actor, originalBacking);
-        }
-
-        for (var index = 0; index < appearance.Equipment.Length; ++index)
-        {
-            var model = new EquipmentModelId { Value = appearance.Equipment[index] };
-            character->DrawData.LoadEquipment((DrawDataContainer.EquipmentSlot)index, &model, true);
-        }
-
+        originalModelScale = *(float*)((byte*)characterBase + CharacterBaseModelScaleOffset);
         return true;
     }
 
-    private static bool IsApplied(
+    private static bool TryApplyAppearance(
         IGameObject actor,
         AppearancePayload appearance,
-        AppearancePayload? expectedBacking = null)
-    {
-        var gameObject = (GameObject*)actor.Address;
-        var characterBase = gameObject == null ? null : gameObject->GetCharacterBase();
-        var character = (Character*)actor.Address;
-        if (characterBase == null || character == null)
-            return false;
-
-        if (IsYoung(appearance))
-        {
-            if (characterBase->GetModelType() != CharacterBase.ModelType.Human)
-                return false;
-
-            var human = (Human*)characterBase;
-            return appearance.Customize.AsSpan().SequenceEqual(human->Customize.Data)
-                && (expectedBacking is null || IsBackingApplied(character, expectedBacking));
-        }
-
-        if (character->ModelContainer.ModelCharaId != appearance.ModelCharaId)
-            return false;
-
-        if (!appearance.IsHuman)
-            return characterBase->GetModelType() != CharacterBase.ModelType.Human;
-
-        if (characterBase->GetModelType() != CharacterBase.ModelType.Human
-            || !appearance.Customize.AsSpan().SequenceEqual(character->DrawData.CustomizeData.Data))
-        {
-            return false;
-        }
-
-        var equipment = character->DrawData.EquipmentModelIds;
-        for (var index = 0; index < equipment.Length; ++index)
-            if (equipment[index].Value != appearance.Equipment[index])
-                return false;
-
-        return true;
-    }
-
-    private static bool IsBackingApplied(Character* character, AppearancePayload appearance)
-    {
-        if (character->ModelContainer.ModelCharaId != appearance.ModelCharaId
-            || !appearance.Customize.AsSpan().SequenceEqual(character->DrawData.CustomizeData.Data))
-        {
-            return false;
-        }
-
-        var equipment = character->DrawData.EquipmentModelIds;
-        for (var index = 0; index < equipment.Length; ++index)
-            if (equipment[index].Value != appearance.Equipment[index])
-                return false;
-
-        return true;
-    }
-
-    private static bool IsYoung(AppearancePayload appearance)
-        => appearance.IsHuman
-            && appearance.Customize.Length > 2
-            && appearance.Customize[2] == 4;
-
-    private bool TryImmediateRedraw(IGameObject actor, AppearancePayload appearance)
+        float? modelScale)
     {
         try
         {
             var gameObject = (GameObject*)actor.Address;
-            if (gameObject == null)
+            if (gameObject == null || !TryWrite(actor, appearance))
                 return false;
 
-            var redrawn = TryWrite(actor, appearance)
-                && TryDisable(actor)
-                && TryWrite(actor, appearance)
-                && TryEnable(actor, appearance);
-            if (!redrawn)
-                return false;
+            gameObject->RenderFlags |= NativeVisibilityFlags.Model;
+            gameObject->DisableDraw();
+            gameObject->RenderFlags &= ~NativeVisibilityFlags.Model;
+            gameObject->EnableDraw();
 
-            var characterBase = gameObject->GetCharacterBase();
-            return characterBase != null
-                && TryFinalizeAppearance(actor, appearance)
-                && IsApplied(actor, appearance);
+            if (modelScale is { } requestedScale)
+            {
+                var characterBase = gameObject->GetCharacterBase();
+                if (characterBase == null)
+                    return false;
+
+                *(float*)((byte*)characterBase + CharacterBaseModelScaleOffset) = requestedScale;
+            }
+
+            return true;
         }
         catch (Exception exception)
         {
-            Log.Error(exception, "Immediate redraw failed.");
+            Log.Error(exception, "Backing write or full redraw call failed.");
             return false;
         }
     }
@@ -570,7 +599,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
             mapping.TargetRowId,
             mapping.TargetModelCharaRowId,
             mapping.TargetName,
-            mapping.IsHuman);
+            mapping.IsHuman,
+            mapping.TargetModelScale);
 
     private static TrackedRuntimeObservation? ObserveFailed(ActorIdentity identity)
         => PrototypeContract.TryGetMapping(identity.BaseId, out var mapping)
@@ -593,14 +623,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private enum ApplyStage
     {
-        WriteVisible,
-        Disable,
-        WriteHidden,
-        Enable,
-        Finalize,
-        Verify,
-        Applied,
-        Failed,
+        Pending,
+        Redrawn,
     }
 
     private readonly record struct ActorIdentity(
@@ -622,6 +646,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private sealed record TrackedActor(
         ActorIdentity Identity,
         AppearancePayload Original,
+        float? OriginalModelScale,
         PrototypeMapping Mapping,
         ApplyStage Stage);
 

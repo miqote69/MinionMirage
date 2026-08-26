@@ -27,8 +27,87 @@ internal static class TargetAppearanceResolver
             throw new InvalidOperationException(
                 $"ENpcBase {row.RowId} does not resolve to a Human ModelChara.");
 
-        var customize = new byte[]
+        var customize = CreateCustomize(row);
+
+        var equipment = row.NpcEquip.RowId is not 0
+            && row.NpcEquip.ValueNullable is { } referenced
+            && row is { ModelBody: 0, ModelLegs: 0 }
+                ? CreateEquipment(referenced)
+                : CreateEquipment(row);
+
+        return new AppearancePayload(row.ModelChara.RowId, customize, equipment, IsHuman: true);
+    }
+
+    private static AppearancePayload ResolveBattleNpc(IDataManager dataManager, PrototypeMapping mapping)
+    {
+        var sheet = dataManager.GetExcelSheet<BNpcBase>();
+        if (!sheet.TryGetRow(mapping.TargetRowId, out var row))
+            throw new InvalidOperationException(
+                $"BNpcBase row {mapping.TargetRowId} is unavailable.");
+
+        var model = row.ModelChara.ValueNullable
+            ?? throw new InvalidOperationException(
+                $"ModelChara row {row.ModelChara.RowId} is unavailable for BNpcBase {row.RowId}.");
+        if (mapping.IsHuman)
         {
+            if (model.Type != 1)
+                throw new InvalidOperationException(
+                    $"BNpcBase {row.RowId} does not resolve to a Human ModelChara.");
+            if (row.ModelChara.RowId != mapping.TargetModelCharaRowId)
+                throw new InvalidOperationException(
+                    $"BNpcBase {row.RowId} resolved ModelChara {row.ModelChara.RowId}, expected {mapping.TargetModelCharaRowId}.");
+
+            var customize = row.BNpcCustomize.ValueNullable
+                ?? throw new InvalidOperationException(
+                    $"BNpcCustomize row {row.BNpcCustomize.RowId} is unavailable for BNpcBase {row.RowId}.");
+            var equipment = row.NpcEquip.ValueNullable
+                ?? throw new InvalidOperationException(
+                    $"NpcEquip row {row.NpcEquip.RowId} is unavailable for BNpcBase {row.RowId}.");
+
+            return new AppearancePayload(
+                row.ModelChara.RowId,
+                CreateCustomize(customize),
+                CreateEquipment(equipment),
+                IsHuman: true);
+        }
+
+        if (model.Type == 1)
+            throw new InvalidOperationException(
+                $"BNpcBase {row.RowId} does not resolve to a non-Human ModelChara.");
+        if (row.ModelChara.RowId != mapping.TargetModelCharaRowId)
+            throw new InvalidOperationException(
+                $"BNpcBase {row.RowId} resolved ModelChara {row.ModelChara.RowId}, expected {mapping.TargetModelCharaRowId}.");
+
+        if (model.Type == 2)
+        {
+            var customize = row.BNpcCustomize.ValueNullable
+                ?? throw new InvalidOperationException(
+                    $"BNpcCustomize row {row.BNpcCustomize.RowId} is unavailable for DemiHuman BNpcBase {row.RowId}.");
+            var equipment = row.NpcEquip.ValueNullable
+                ?? throw new InvalidOperationException(
+                    $"NpcEquip row {row.NpcEquip.RowId} is unavailable for DemiHuman BNpcBase {row.RowId}.");
+
+            return new AppearancePayload(
+                row.ModelChara.RowId,
+                CreateCustomize(customize),
+                CreateEquipment(equipment),
+                IsHuman: false);
+        }
+
+        if (model.Type != 3)
+            throw new InvalidOperationException(
+                $"BNpcBase {row.RowId} resolves unsupported non-Human ModelChara type {model.Type}.");
+
+        return new AppearancePayload(
+            row.ModelChara.RowId,
+            new byte[26],
+            new ulong[10],
+            IsHuman: false);
+    }
+
+    private static byte[] CreateCustomize(ENpcBase row)
+        =>
+        [
             checked((byte)row.Race.RowId),
             checked((byte)row.Gender),
             row.BodyType,
@@ -55,61 +134,7 @@ internal static class TargetAppearanceResolver
             row.ExtraFeature2OrBust,
             row.FacePaint,
             row.FacePaintColor,
-        };
-
-        var equipment = row.NpcEquip.RowId is not 0
-            && row.NpcEquip.ValueNullable is { } referenced
-            && row is { ModelBody: 0, ModelLegs: 0 }
-                ? CreateEquipment(referenced)
-                : CreateEquipment(row);
-
-        return new AppearancePayload(row.ModelChara.RowId, customize, equipment, IsHuman: true);
-    }
-
-    private static AppearancePayload ResolveBattleNpc(IDataManager dataManager, PrototypeMapping mapping)
-    {
-        var sheet = dataManager.GetExcelSheet<BNpcBase>();
-        if (!sheet.TryGetRow(mapping.TargetRowId, out var row))
-            throw new InvalidOperationException(
-                $"BNpcBase row {mapping.TargetRowId} is unavailable.");
-
-        var model = row.ModelChara.ValueNullable
-            ?? throw new InvalidOperationException(
-                $"ModelChara row {row.ModelChara.RowId} is unavailable for BNpcBase {row.RowId}.");
-        if (row.ModelChara.RowId != mapping.TargetModelCharaRowId)
-            throw new InvalidOperationException(
-                $"BNpcBase {row.RowId} resolved ModelChara {row.ModelChara.RowId}, expected {mapping.TargetModelCharaRowId}.");
-
-        if (mapping.IsHuman)
-        {
-            if (model.Type != 1)
-                throw new InvalidOperationException(
-                    $"BNpcBase {row.RowId} does not resolve to a Human ModelChara.");
-
-            var customize = row.BNpcCustomize.ValueNullable
-                ?? throw new InvalidOperationException(
-                    $"BNpcCustomize row {row.BNpcCustomize.RowId} is unavailable for BNpcBase {row.RowId}.");
-            var equipment = row.NpcEquip.ValueNullable
-                ?? throw new InvalidOperationException(
-                    $"NpcEquip row {row.NpcEquip.RowId} is unavailable for BNpcBase {row.RowId}.");
-
-            return new AppearancePayload(
-                row.ModelChara.RowId,
-                CreateCustomize(customize),
-                CreateEquipment(equipment),
-                IsHuman: true);
-        }
-
-        if (model.Type == 1)
-            throw new InvalidOperationException(
-                $"BNpcBase {row.RowId} does not resolve to a non-Human ModelChara.");
-
-        return new AppearancePayload(
-            row.ModelChara.RowId,
-            new byte[26],
-            new ulong[10],
-            IsHuman: false);
-    }
+        ];
 
     private static byte[] CreateCustomize(BNpcCustomize row)
         =>
