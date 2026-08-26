@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Minion To NPC — GUI Mock</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <main class="main" id="top">
+      <header class="topbar">
+        <div class="menu-bar">
+          <button class="settings-button" id="settingsButton" type="button" aria-expanded="false" aria-controls="settingsMenu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1 2.2-2.3 1.3-1.8-1.1-1.5.8-.5 2h-2.8l-.5-2-1.5-.8-1.8 1.1-2.3-1.3.1-2.2-1.1-1.3-2-.4v-2.6l2-.4L4.6 9l-.1-2.2 2.3-1.3 1.8 1.1 1.5-.8.5-2h2.8l.5 2 1.5.8 1.8-1.1 2.3 1.3-.1 2.2 1.1 1.3 2 .4v2.6l-2 .4-1.1 1.3Z"/></svg>
+            <span data-i18n="settings">Settings</span>
+            <svg class="settings-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+          </button>
+
+          <div class="settings-menu" id="settingsMenu" hidden>
+            <p class="settings-menu-title" data-i18n="settings">Settings</p>
+            <label class="language-control">
+              <span data-i18n="language">UI言語</span>
+              <select id="languageSelect">
+                <option value="ja">日本語</option>
+                <option value="en">English</option>
+                <option value="de">Deutsch</option>
+                <option value="fr">Français</option>
+              </select>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+            </label>
+          </div>
+        </div>
+      </header>
+
+      <h1 class="sr-only" data-i18n="title">ミニオン・ロスター</h1>
+      <section class="control-deck" id="roster" aria-label="Roster controls">
+        <label class="search-box">
+          <span class="sr-only" data-i18n="searchLabel">ミニオンを検索</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="searchInput" type="search" autocomplete="off" data-i18n-placeholder="searchPlaceholder" placeholder="ミニオン名・NPC名で検索">
+          <kbd aria-hidden="true">/</kbd>
+        </label>
+
+        <div class="view-toggle" role="group" aria-label="View mode">
+          <button class="icon-button is-active" id="gridViewButton" type="button" data-view="grid" aria-pressed="true" data-tooltip="Grid view">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
+            <span class="sr-only" data-i18n="gridView">カード表示</span>
+          </button>
+          <button class="icon-button" id="listViewButton" type="button" data-view="list" aria-pressed="false" data-tooltip="List view">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+            <span class="sr-only" data-i18n="listView">リスト表示</span>
+          </button>
+        </div>
+
+        <div class="bulk-actions" role="group" aria-label="Bulk actions">
+          <button class="button button-ghost" id="disableAllButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6 18 18M18 6 6 18"/></svg>
+            <span data-i18n="disableAll">一括OFF</span>
+          </button>
+          <button class="button button-primary" id="enableAllButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>
+            <span data-i18n="enableAll">一括ON</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="filter-row" aria-label="Mapping filters">
+        <div class="filter-chips" id="filterChips">
+          <button class="filter-chip is-active" type="button" data-filter="all" aria-pressed="true"><span data-i18n="all">すべて</span><small>10</small></button>
+          <button class="filter-chip" type="button" data-filter="human" aria-pressed="false"><span data-i18n="human">ヒューマン</span><small>7</small></button>
+          <button class="filter-chip" type="button" data-filter="demihuman" aria-pressed="false"><span data-i18n="demihuman">デミヒューマン</span><small>2</small></button>
+          <button class="filter-chip" type="button" data-filter="monster" aria-pressed="false"><span data-i18n="monster">モンスター</span><small>1</small></button>
+        </div>
+        <div class="roster-counts">
+          <span class="enabled-summary">
+            <span class="enabled-dot" aria-hidden="true"></span>
+            <span data-i18n="enabledMappings">有効</span>
+            <strong id="enabledCount">10</strong><span>/</span><span id="totalCount">10</span>
+            <span class="summary-progress" aria-hidden="true"><span id="progressBar"></span></span>
+          </span>
+          <p class="result-count" id="resultCount" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="mapping-grid" id="mappingGrid" aria-label="Minion mappings"></section>
+
+      <section class="empty-state" id="emptyState" hidden>
+        <div class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4M8.5 11h5"/></svg>
+        </div>
+        <h2 data-i18n="noResults">該当するミニオンがありません</h2>
+        <p data-i18n="noResultsHint">検索語を短くするか、フィルターを「すべて」に戻してください。</p>
+        <button class="button button-ghost" id="resetSearchButton" type="button" data-i18n="reset">条件をリセット</button>
+      </section>
+
+      <footer class="footer">
+        <span>Minion To NPC</span>
+        <span class="footer-divider"></span>
+        <span data-i18n="mockLabel">Interactive GUI mock · Local only</span>
+      </footer>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

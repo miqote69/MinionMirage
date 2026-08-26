@@ -1,5 +1,6 @@
 using Dalamud.Game;
 using Dalamud.Plugin.Services;
+using System.Globalization;
 
 namespace MinionToNPC.Localization;
 
@@ -9,11 +10,17 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
         ? FromClientLanguage(clientState.ClientLanguage)
         : configuration.UiLanguage;
 
-    public string Get(UiTextKey key)
-        => Strings.TryGetValue(EffectiveLanguage, out var language)
+    public string Get(UiTextKey key, params object[] arguments)
+    {
+        var value = Strings.TryGetValue(EffectiveLanguage, out var language)
             && language.TryGetValue(key, out var localized)
                 ? localized
                 : English[key];
+
+        return arguments.Length == 0
+            ? value
+            : string.Format(CultureInfo.CurrentCulture, value, arguments);
+    }
 
     public string GetLanguageName(UiLanguage language) => language switch
     {
@@ -41,7 +48,21 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
             [UiTextKey.Japanese] = "Japanese",
             [UiTextKey.German] = "German",
             [UiTextKey.French] = "French",
+            [UiTextKey.Settings] = "Settings",
             [UiTextKey.UiLanguage] = "UI language",
+            [UiTextKey.Search] = "Search minions or NPCs",
+            [UiTextKey.All] = "All",
+            [UiTextKey.Human] = "Human",
+            [UiTextKey.AdultHuman] = "Adult human",
+            [UiTextKey.YoungHuman] = "Young human",
+            [UiTextKey.DemiHuman] = "Demi-human",
+            [UiTextKey.Monster] = "Monster",
+            [UiTextKey.CardView] = "Cards",
+            [UiTextKey.ListView] = "List",
+            [UiTextKey.Target] = "Target",
+            [UiTextKey.ActiveMappings] = "{0} / {1} active",
+            [UiTextKey.VisibleMappings] = "{0} / {1} shown",
+            [UiTextKey.NoResults] = "No mappings match the current search and filter.",
             [UiTextKey.EnableAll] = "Enable all",
             [UiTextKey.DisableAll] = "Disable all",
             [UiTextKey.Enabled] = "Enabled",
@@ -59,7 +80,21 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
                 [UiTextKey.Japanese] = "日本語",
                 [UiTextKey.German] = "ドイツ語",
                 [UiTextKey.French] = "フランス語",
+                [UiTextKey.Settings] = "設定",
                 [UiTextKey.UiLanguage] = "UI言語",
+                [UiTextKey.Search] = "ミニオン名・NPC名で検索",
+                [UiTextKey.All] = "すべて",
+                [UiTextKey.Human] = "ヒューマン",
+                [UiTextKey.AdultHuman] = "Adultヒューマン",
+                [UiTextKey.YoungHuman] = "Youngヒューマン",
+                [UiTextKey.DemiHuman] = "デミヒューマン",
+                [UiTextKey.Monster] = "モンスター",
+                [UiTextKey.CardView] = "カード",
+                [UiTextKey.ListView] = "リスト",
+                [UiTextKey.Target] = "変換先",
+                [UiTextKey.ActiveMappings] = "{0} / {1} 有効",
+                [UiTextKey.VisibleMappings] = "{0} / {1} 件",
+                [UiTextKey.NoResults] = "検索・フィルター条件に一致する項目はありません。",
                 [UiTextKey.EnableAll] = "一括ON",
                 [UiTextKey.DisableAll] = "一括OFF",
                 [UiTextKey.Enabled] = "有効",
@@ -72,7 +107,21 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
                 [UiTextKey.Japanese] = "Japanisch",
                 [UiTextKey.German] = "Deutsch",
                 [UiTextKey.French] = "Französisch",
+                [UiTextKey.Settings] = "Einstellungen",
                 [UiTextKey.UiLanguage] = "UI-Sprache",
+                [UiTextKey.Search] = "Begleiter oder NPC suchen",
+                [UiTextKey.All] = "Alle",
+                [UiTextKey.Human] = "Humanoid",
+                [UiTextKey.AdultHuman] = "Erwachsener Humanoid",
+                [UiTextKey.YoungHuman] = "Junger Humanoid",
+                [UiTextKey.DemiHuman] = "Demi-Humanoid",
+                [UiTextKey.Monster] = "Monster",
+                [UiTextKey.CardView] = "Karten",
+                [UiTextKey.ListView] = "Liste",
+                [UiTextKey.Target] = "Ziel",
+                [UiTextKey.ActiveMappings] = "{0} / {1} aktiv",
+                [UiTextKey.VisibleMappings] = "{0} / {1} angezeigt",
+                [UiTextKey.NoResults] = "Keine Zuordnungen entsprechen Suche und Filter.",
                 [UiTextKey.EnableAll] = "Alle aktivieren",
                 [UiTextKey.DisableAll] = "Alle deaktivieren",
                 [UiTextKey.Enabled] = "Aktiviert",
@@ -85,7 +134,21 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
                 [UiTextKey.Japanese] = "Japonais",
                 [UiTextKey.German] = "Allemand",
                 [UiTextKey.French] = "Français",
+                [UiTextKey.Settings] = "Paramètres",
                 [UiTextKey.UiLanguage] = "Langue de l'interface",
+                [UiTextKey.Search] = "Rechercher une mascotte ou un PNJ",
+                [UiTextKey.All] = "Tout",
+                [UiTextKey.Human] = "Humanoïde",
+                [UiTextKey.AdultHuman] = "Humanoïde adulte",
+                [UiTextKey.YoungHuman] = "Jeune humanoïde",
+                [UiTextKey.DemiHuman] = "Demi-humain",
+                [UiTextKey.Monster] = "Monstre",
+                [UiTextKey.CardView] = "Cartes",
+                [UiTextKey.ListView] = "Liste",
+                [UiTextKey.Target] = "Cible",
+                [UiTextKey.ActiveMappings] = "{0} / {1} actifs",
+                [UiTextKey.VisibleMappings] = "{0} / {1} affichés",
+                [UiTextKey.NoResults] = "Aucune association ne correspond à la recherche et au filtre.",
                 [UiTextKey.EnableAll] = "Tout activer",
                 [UiTextKey.DisableAll] = "Tout désactiver",
                 [UiTextKey.Enabled] = "Activé",

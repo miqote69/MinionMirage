@@ -23,9 +23,21 @@ internal static class TargetAppearanceResolver
         var model = row.ModelChara.ValueNullable
             ?? throw new InvalidOperationException(
                 $"ModelChara row {row.ModelChara.RowId} is unavailable for ENpcBase {row.RowId}.");
-        if (!mapping.IsHuman || model.Type != 1)
+        if (row.ModelChara.RowId != mapping.TargetModelCharaRowId)
+            throw new InvalidOperationException(
+                $"ENpcBase {row.RowId} resolved ModelChara {row.ModelChara.RowId}, expected {mapping.TargetModelCharaRowId}.");
+        if (mapping.IsHuman && model.Type != 1)
             throw new InvalidOperationException(
                 $"ENpcBase {row.RowId} does not resolve to a Human ModelChara.");
+        if (!mapping.IsHuman && model.Type == 3)
+            return new AppearancePayload(
+                row.ModelChara.RowId,
+                new byte[26],
+                new ulong[10],
+                IsHuman: false);
+        if (!mapping.IsHuman && model.Type != 2)
+            throw new InvalidOperationException(
+                $"ENpcBase {row.RowId} does not resolve to a DemiHuman ModelChara.");
 
         var customize = CreateCustomize(row);
 
@@ -35,7 +47,7 @@ internal static class TargetAppearanceResolver
                 ? CreateEquipment(referenced)
                 : CreateEquipment(row);
 
-        return new AppearancePayload(row.ModelChara.RowId, customize, equipment, IsHuman: true);
+        return new AppearancePayload(row.ModelChara.RowId, customize, equipment, mapping.IsHuman);
     }
 
     private static AppearancePayload ResolveBattleNpc(IDataManager dataManager, PrototypeMapping mapping)

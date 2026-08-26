@@ -4,11 +4,19 @@ Local-first Dalamud plugin prototype.
 
 ## Initial scope
 
-- Detect the local player's fixed prototype Companions: `RowId 331` (`ファースト・ヤ・シュトラ`), `RowId 232` (`マメット・スカアハ`), `RowId 218` (`ニュー・アリゼー`), and `RowId 398` (`マメット・ガイア`).
+- Detect the local player's fixed prototype Companions: `RowId 331` (`ファースト・ヤ・シュトラ`), `RowId 232` (`マメット・スカアハ`), `RowId 218` (`ニュー・アリゼー`), `RowId 398` (`マメット・ガイア`), `RowId 534` (`マメット・ペルペル`), `RowId 325` (`マメット・フラン`), `RowId 298` (`マメット・シロ`), `RowId 394` (`オートマトン２Ｂ`), `RowId 395` (`オートマトン２Ｐ`), `RowId 98` (`マメット・ミンフィリア`), `RowId 260` (`マメット・クロ`), and `RowId 332` (`マメット・リーン`).
 - Replace Row 331 with Human `BNpcBase 13910` (`Y'shtola`, `BNpcCustomize 526`, `NpcEquip 2269`) and set the recreated draw model to the NPC row's `ModelScale=1.0f`, matching the User-provided Glamourer screenshot.
 - Replace Row 232 with `BNpcBase 6479` / `ModelChara 1689` (`Scathach`, Monster).
 - Replace Row 218 with `ENpcBase 1017687` (`Alisaie`, matching the clothed Anamnesis NPC appearance, Human) and set the recreated draw model to `ModelScale=0.97f`, matching the User-confirmed current player multiplier.
 - Replace Row 398 (`Mammet Gaia`) with `BNpcBase 17830` / `ModelChara 4436` (`Gaia`, DemiHuman Type 2 / Model 1041 / Base 1 / Variant 1), matching the User-provided screenshot.
+- Replace Row 534 (`Mammet Pelupelu`, source ModelChara `4391`) with `ENpcBase 1046564` (`Quiet Pelupelu`, Human BodyType 4), matching the User-provided screenshot.
+- Replace Row 325 (`Mammet Fran`, source ModelChara `2412`) with `ENpcBase 1025589` / `ModelChara 2382` (`Fran`, DemiHuman Type 2 / Model 1034 / Base 1 / Variant 1), matching the User-provided screenshot.
+- Replace Row 298 (`Wind-up Zhloe`, source ModelChara `2246`) with `ENpcBase 1044638` (`Zhloe Aliapoh`, Human BodyType 1), matching the User-provided screenshot.
+- Replace Row 394 (`Automaton 2B`, source ModelChara `2991`) with `ENpcBase 1033925` / `ModelChara 2810` (`2B`, Human Type 1 / Model 201 / Base 1 / Variant 1, Midlander female BodyType 1), matching the User-provided screenshot.
+- Replace Row 395 (`Automaton 2P`, source ModelChara `2992`) with `BNpcBase 11366` / `ModelChara 2810` (`2P`, Human Type 1 / Model 201 / Base 1 / Variant 1, Midlander female BodyType 1), matching the User-provided screenshot.
+- Replace Row 98 (`Wind-up Minfilia`, source ModelChara `797`) with `ENpcBase 1006573` (`Minfilia`, Human BodyType 1), matching the User-provided screenshot.
+- Replace Row 260 (`Wind-up Khloe`, source ModelChara `1897`) with `ENpcBase 1012445` (`Khloe Aliapoh`, Human Young NPC / BodyType 4) and set the recreated draw model to the User-requested trial `ModelScale=0.7f`, using 70% of the NPC's unscaled model size and matching the User-provided screenshot.
+- Replace Row 332 (`Mammet Ryne`, source ModelChara `2486`) with `ENpcBase 1033894` (`Ryne`, Human / ModelChara 0) and set the recreated draw model to the requested `ModelScale=0.86f`, matching the User-provided screenshot authority.
 - Provide a compact config window with each mapped minion's icon, localized name, per-mapping enable switch, enable-all/disable-all buttons, and Automatic/English/Japanese/German/French UI language selection.
 - Keep the original Companion entity and its follow/despawn lifecycle.
 - Restore or clean up safely when the Companion disappears or the plugin unloads.
