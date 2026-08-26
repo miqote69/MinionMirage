@@ -10,6 +10,7 @@ internal sealed unsafe class NativeDrawObjectInjector : IDisposable
 {
     private readonly Hook<CreateCharacterBaseDelegate> hook;
     private AppearancePayload? active;
+    private bool injectedDuringInvoke;
     private bool disposed;
 
     public NativeDrawObjectInjector(IGameInteropProvider interop)
@@ -19,16 +20,18 @@ internal sealed unsafe class NativeDrawObjectInjector : IDisposable
             CreateCharacterBaseDetour);
     }
 
-    public void Invoke(GameObject* gameObject, AppearancePayload appearance)
+    public bool Invoke(GameObject* gameObject, AppearancePayload appearance)
     {
         if (disposed || active is not null)
             throw new InvalidOperationException("Draw object injection is unavailable or already active.");
 
         hook.Enable();
         active = appearance;
+        injectedDuringInvoke = false;
         try
         {
             gameObject->EnableDraw();
+            return injectedDuringInvoke;
         }
         finally
         {
@@ -70,6 +73,7 @@ internal sealed unsafe class NativeDrawObjectInjector : IDisposable
         for (var index = 0; index < equipmentSlotCount; ++index)
             injectedEquipment[index].Value = appearance.Equipment[index];
 
+        injectedDuringInvoke = true;
         return hook.Original(
             appearance.ModelCharaId,
             &injectedCustomize,

@@ -156,8 +156,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
             ApplyStage.Disable when TryDisable(current) => ApplyStage.WriteHidden,
             ApplyStage.WriteHidden when TryWrite(current, desired) => ApplyStage.Enable,
             ApplyStage.Enable when TryEnable(current, desired) => ApplyStage.Finalize,
-            ApplyStage.Finalize when TryFinalizeAppearance(current, desired) => ApplyStage.Verify,
-            ApplyStage.Verify when IsApplied(current, desired) => ApplyStage.Applied,
+            ApplyStage.Finalize when TryFinalizeAppearance(current, desired, state.Original) => ApplyStage.Verify,
+            ApplyStage.Verify when IsApplied(current, desired, state.Original) => ApplyStage.Applied,
             _ => ApplyStage.Failed,
         };
 
@@ -373,11 +373,14 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return false;
 
         gameObject->RenderFlags &= ~NativeVisibilityFlags.Model;
-        injector.Invoke(gameObject, appearance);
-        return gameObject->DrawObject != null;
+        return injector.Invoke(gameObject, appearance)
+            && gameObject->DrawObject != null;
     }
 
-    private static bool TryFinalizeAppearance(IGameObject actor, AppearancePayload appearance)
+    private static bool TryFinalizeAppearance(
+        IGameObject actor,
+        AppearancePayload appearance,
+        AppearancePayload? originalBacking = null)
     {
         var gameObject = (GameObject*)actor.Address;
         var characterBase = gameObject == null ? null : gameObject->GetCharacterBase();
@@ -394,6 +397,15 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return false;
         }
 
+        if (IsYoung(appearance))
+        {
+            var human = (Human*)characterBase;
+            if (!appearance.Customize.AsSpan().SequenceEqual(human->Customize.Data))
+                return false;
+
+            return originalBacking is null || TryWrite(actor, originalBacking);
+        }
+
         for (var index = 0; index < appearance.Equipment.Length; ++index)
         {
             var model = new EquipmentModelId { Value = appearance.Equipment[index] };
@@ -403,17 +415,29 @@ public sealed unsafe class Plugin : IDalamudPlugin
         return true;
     }
 
-    private static bool IsApplied(IGameObject actor, AppearancePayload appearance)
+    private static bool IsApplied(
+        IGameObject actor,
+        AppearancePayload appearance,
+        AppearancePayload? expectedBacking = null)
     {
         var gameObject = (GameObject*)actor.Address;
         var characterBase = gameObject == null ? null : gameObject->GetCharacterBase();
         var character = (Character*)actor.Address;
-        if (characterBase == null
-            || character == null
-            || character->ModelContainer.ModelCharaId != appearance.ModelCharaId)
-        {
+        if (characterBase == null || character == null)
             return false;
+
+        if (IsYoung(appearance))
+        {
+            if (characterBase->GetModelType() != CharacterBase.ModelType.Human)
+                return false;
+
+            var human = (Human*)characterBase;
+            return appearance.Customize.AsSpan().SequenceEqual(human->Customize.Data)
+                && (expectedBacking is null || IsBackingApplied(character, expectedBacking));
         }
+
+        if (character->ModelContainer.ModelCharaId != appearance.ModelCharaId)
+            return false;
 
         if (!appearance.IsHuman)
             return characterBase->GetModelType() != CharacterBase.ModelType.Human;
@@ -431,6 +455,27 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         return true;
     }
+
+    private static bool IsBackingApplied(Character* character, AppearancePayload appearance)
+    {
+        if (character->ModelContainer.ModelCharaId != appearance.ModelCharaId
+            || !appearance.Customize.AsSpan().SequenceEqual(character->DrawData.CustomizeData.Data))
+        {
+            return false;
+        }
+
+        var equipment = character->DrawData.EquipmentModelIds;
+        for (var index = 0; index < equipment.Length; ++index)
+            if (equipment[index].Value != appearance.Equipment[index])
+                return false;
+
+        return true;
+    }
+
+    private static bool IsYoung(AppearancePayload appearance)
+        => appearance.IsHuman
+            && appearance.Customize.Length > 2
+            && appearance.Customize[2] == 4;
 
     private bool TryImmediateRedraw(IGameObject actor, AppearancePayload appearance)
     {
@@ -450,30 +495,13 @@ public sealed unsafe class Plugin : IDalamudPlugin
             var characterBase = gameObject->GetCharacterBase();
             return characterBase != null
                 && TryFinalizeAppearance(actor, appearance)
-                && IsBackingApplied(actor, appearance);
+                && IsApplied(actor, appearance);
         }
         catch (Exception exception)
         {
             Log.Error(exception, "Immediate redraw failed.");
             return false;
         }
-    }
-
-    private static bool IsBackingApplied(IGameObject actor, AppearancePayload appearance)
-    {
-        var character = (Character*)actor.Address;
-        if (character == null || character->ModelContainer.ModelCharaId != appearance.ModelCharaId)
-            return false;
-        if (!appearance.IsHuman)
-            return true;
-        if (!appearance.Customize.AsSpan().SequenceEqual(character->DrawData.CustomizeData.Data))
-            return false;
-
-        var equipment = character->DrawData.EquipmentModelIds;
-        for (var index = 0; index < equipment.Length; ++index)
-            if (equipment[index].Value != appearance.Equipment[index])
-                return false;
-        return true;
     }
 
     private static bool TryResolve(ActorIdentity identity, out IGameObject actor)

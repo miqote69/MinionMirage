@@ -2,7 +2,7 @@
 
 ## Objective and scope
 
-Verify that the development plugin selects the fixed mapping for the summoned Companion, applies either Human or Monster appearance through the shared redraw lifecycle, and publishes a readable, atomic snapshot without moving Actor access outside the Dalamud Framework thread.
+Verify that the development plugin selects the fixed mapping for the summoned Companion, applies either Human or Monster appearance through the shared redraw lifecycle, preserves Young NPC-specific equipment as creation-time appearance input without treating it as absent equipment or player-style post-create slots, and publishes a readable, atomic snapshot without moving Actor access outside the Dalamud Framework thread.
 
 The fixed prototype mappings are:
 
@@ -21,7 +21,7 @@ NPC appearance correctness and visual acceptance are separate runtime checks. We
 ## Entry, suspension, and exit
 
 - Entry: source builds and the Dev Plugin loads.
-- Suspend on plugin load failure, missing state path, invalid JSON, stale heartbeat over 5 seconds while Framework updates continue, or state-writer error.
+- Suspend on plugin load failure, missing state path, invalid JSON, stale heartbeat over 5 seconds while Framework updates continue, state-writer error, missing Young creation injection, or any post-create equipment-slot operation against Young.
 - Exit: all three mappings, wrong-minion, Human/Monster verification, apply/failure, despawn, and unload states are distinguishable; build regression passes.
 
 ## Evidence and authority

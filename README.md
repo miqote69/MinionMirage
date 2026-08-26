@@ -8,6 +8,7 @@ Local-first Dalamud plugin prototype.
 - Replace Row 331 with `ENpcBase 1003782` (`Y'shtola`, Human).
 - Replace Row 232 with `BNpcBase 6479` / `ModelChara 1689` (`Scathach`, Monster).
 - Replace Row 218 with `BNpcBase 10067` / `BNpcCustomize 646` / `NpcEquip 1713` (`アリゼーの幻体`, Human).
+- Treat Young `NpcEquip` as NPC-specific creation equipment; it is not absent equipment and is not updated through the player's post-create equipment-slot path.
 - Keep the original Companion entity and its follow/despawn lifecycle.
 - Restore or clean up safely when the Companion disappears or the plugin unloads.
 
