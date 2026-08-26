@@ -9,8 +9,7 @@ internal sealed record RuntimeStateSnapshot(
     int SchemaVersion,
     DateTimeOffset ObservedAtUtc,
     string PluginState,
-    uint SourceCompanionRowId,
-    uint TargetEventNpcRowId,
+    IReadOnlyList<RuntimeMappingObservation> Mappings,
     LocalPlayerRuntimeObservation? LocalPlayer,
     string SelectionState,
     IReadOnlyList<CompanionRuntimeObservation> Companions,
@@ -43,11 +42,24 @@ internal sealed record TrackedRuntimeObservation(
     ushort ObjectIndex,
     string GameObjectId,
     string EntityId,
+    uint SourceCompanionRowId,
+    string TargetKind,
+    uint TargetRowId,
+    uint TargetModelCharaRowId,
     string Stage);
+
+internal sealed record RuntimeMappingObservation(
+    uint SourceCompanionRowId,
+    string SourceName,
+    string TargetKind,
+    uint TargetRowId,
+    uint TargetModelCharaRowId,
+    string TargetName,
+    bool IsHuman);
 
 internal sealed class RuntimeStateReporter
 {
-    internal const int CurrentSchemaVersion = 1;
+    internal const int CurrentSchemaVersion = 2;
     internal const string FileName = "runtime-state.json";
 
     private static readonly UTF8Encoding Utf8NoBom = new(false);

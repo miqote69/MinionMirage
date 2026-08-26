@@ -2,9 +2,14 @@
 
 ## Objective and scope
 
-Verify that the development plugin publishes a readable, atomic snapshot of local-player, Companion selection, ownership, draw/model, tracking, apply, failure, and disposal state without moving Actor access outside the Dalamud Framework thread.
+Verify that the development plugin selects the fixed mapping for the summoned Companion, applies either Human or Monster appearance through the shared redraw lifecycle, and publishes a readable, atomic snapshot without moving Actor access outside the Dalamud Framework thread.
 
-The fixed prototype mapping is Companion `331` (`ファースト・ヤ・シュトラ`) to ENpcBase `1003782`. NPC appearance correctness and visual acceptance are separate runtime checks.
+The fixed prototype mappings are:
+
+- Companion `331` (`ファースト・ヤ・シュトラ`) to ENpcBase `1003782` (Human).
+- Companion `232` (`マメット・スカアハ`) to BNpcBase `6479`, ModelChara `1689` (Monster).
+
+NPC appearance correctness and visual acceptance are separate runtime checks.
 
 ## Environment and levels
 
@@ -16,7 +21,7 @@ The fixed prototype mapping is Companion `331` (`ファースト・ヤ・シュ�
 
 - Entry: source builds and the Dev Plugin loads.
 - Suspend on plugin load failure, missing state path, invalid JSON, stale heartbeat over 5 seconds while Framework updates continue, or state-writer error.
-- Exit: nominal, wrong-minion, target, apply/failure, despawn, and unload states are distinguishable; build regression passes.
+- Exit: both mappings, wrong-minion, Human/Monster verification, apply/failure, despawn, and unload states are distinguishable; build regression passes.
 
 ## Evidence and authority
 

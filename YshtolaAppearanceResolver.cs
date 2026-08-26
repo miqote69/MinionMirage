@@ -3,19 +3,27 @@ using Lumina.Excel.Sheets;
 
 namespace MinionToNPC;
 
-internal static class YshtolaAppearanceResolver
+internal static class TargetAppearanceResolver
 {
-    public static AppearancePayload Resolve(IDataManager dataManager)
+    public static AppearancePayload Resolve(IDataManager dataManager, PrototypeMapping mapping)
+        => mapping.TargetKind switch
+        {
+            PrototypeTargetKind.EventNpc => ResolveEventNpc(dataManager, mapping),
+            PrototypeTargetKind.BattleNpc => ResolveBattleNpc(dataManager, mapping),
+            _ => throw new InvalidOperationException($"Unsupported target kind: {mapping.TargetKind}"),
+        };
+
+    private static AppearancePayload ResolveEventNpc(IDataManager dataManager, PrototypeMapping mapping)
     {
         var sheet = dataManager.GetExcelSheet<ENpcBase>();
-        if (!sheet.TryGetRow(PrototypeContract.TargetEventNpcRowId, out var row))
+        if (!sheet.TryGetRow(mapping.TargetRowId, out var row))
             throw new InvalidOperationException(
-                $"ENpcBase row {PrototypeContract.TargetEventNpcRowId} is unavailable.");
+                $"ENpcBase row {mapping.TargetRowId} is unavailable.");
 
         var model = row.ModelChara.ValueNullable
             ?? throw new InvalidOperationException(
                 $"ModelChara row {row.ModelChara.RowId} is unavailable for ENpcBase {row.RowId}.");
-        if (model.Type != 1)
+        if (!mapping.IsHuman || model.Type != 1)
             throw new InvalidOperationException(
                 $"ENpcBase {row.RowId} does not resolve to a Human ModelChara.");
 
@@ -55,7 +63,31 @@ internal static class YshtolaAppearanceResolver
                 ? CreateEquipment(referenced)
                 : CreateEquipment(row);
 
-        return new AppearancePayload(row.ModelChara.RowId, customize, equipment);
+        return new AppearancePayload(row.ModelChara.RowId, customize, equipment, IsHuman: true);
+    }
+
+    private static AppearancePayload ResolveBattleNpc(IDataManager dataManager, PrototypeMapping mapping)
+    {
+        var sheet = dataManager.GetExcelSheet<BNpcBase>();
+        if (!sheet.TryGetRow(mapping.TargetRowId, out var row))
+            throw new InvalidOperationException(
+                $"BNpcBase row {mapping.TargetRowId} is unavailable.");
+
+        var model = row.ModelChara.ValueNullable
+            ?? throw new InvalidOperationException(
+                $"ModelChara row {row.ModelChara.RowId} is unavailable for BNpcBase {row.RowId}.");
+        if (mapping.IsHuman || model.Type == 1)
+            throw new InvalidOperationException(
+                $"BNpcBase {row.RowId} does not resolve to a non-Human ModelChara.");
+        if (row.ModelChara.RowId != mapping.TargetModelCharaRowId)
+            throw new InvalidOperationException(
+                $"BNpcBase {row.RowId} resolved ModelChara {row.ModelChara.RowId}, expected {mapping.TargetModelCharaRowId}.");
+
+        return new AppearancePayload(
+            row.ModelChara.RowId,
+            new byte[26],
+            new ulong[10],
+            IsHuman: false);
     }
 
     private static ulong[] CreateEquipment(ENpcBase row)

@@ -4,12 +4,13 @@ Local-first Dalamud plugin prototype.
 
 ## Initial scope
 
-- Detect `Companion RowId 331` (`ファースト・ヤ・シュトラ`) when summoned by the local player.
-- Replace only that Companion's local draw appearance with `ENpcBase RowId 1003782` (`Y'shtola`).
+- Detect the local player's fixed prototype Companions: `RowId 331` (`ファースト・ヤ・シュトラ`) and `RowId 232` (`マメット・スカアハ`).
+- Replace Row 331 with `ENpcBase 1003782` (`Y'shtola`, Human).
+- Replace Row 232 with `BNpcBase 6479` / `ModelChara 1689` (`Scathach`, Monster).
 - Keep the original Companion entity and its follow/despawn lifecycle.
 - Restore or clean up safely when the Companion disappears or the plugin unloads.
 
-The initial prototype has no settings UI, multiple mappings, weapon replacement, appearance sync, or public release.
+The initial prototype has no settings UI, configurable mappings, weapon replacement, appearance sync, or public release.
 
 ## Development runtime state
 

@@ -21,7 +21,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     [PluginService] private static IPluginLog Log { get; set; } = null!;
 
     private readonly NativeDrawObjectInjector injector;
-    private readonly AppearancePayload desired;
+    private readonly IReadOnlyDictionary<uint, AppearancePayload> desiredBySource;
     private readonly RuntimeStateReporter stateReporter;
     private TrackedActor? tracked;
     private ActorIdentity? failedIdentity;
@@ -34,14 +34,15 @@ public sealed unsafe class Plugin : IDalamudPlugin
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
         stateReporter = new RuntimeStateReporter(pluginInterface.ConfigDirectory.FullName, Log);
-        desired = YshtolaAppearanceResolver.Resolve(DataManager);
+        desiredBySource = PrototypeContract.Mappings.ToDictionary(
+            mapping => mapping.SourceCompanionRowId,
+            mapping => TargetAppearanceResolver.Resolve(DataManager, mapping));
         injector = new NativeDrawObjectInjector(Interop);
         Framework.Update += OnFrameworkUpdate;
 
         Log.Information(
-            "MinionToNPC prototype loaded. Companion={CompanionRowId}, ENpcBase={EventNpcRowId}.",
-            PrototypeContract.SourceCompanionRowId,
-            PrototypeContract.TargetEventNpcRowId);
+            "MinionToNPC prototype loaded. MappingCount={MappingCount}.",
+            PrototypeContract.Mappings.Count);
         Log.Information("MinionToNPC runtime state: {StateFilePath}", stateReporter.StateFilePath);
         PublishRuntimeState("running", force: true);
     }
@@ -58,7 +59,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         {
             if (!TryImmediateRedraw(current, tracked.Original))
             {
-                Log.Error("Failed to restore the tracked Y'shtola minion while unloading.");
+                Log.Error("Failed to restore the tracked Companion while unloading.");
                 lastError = "unload_restore_failed";
             }
         }
@@ -74,7 +75,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         try
         {
             lastScan = ScanTargets();
-            UpdateTarget(lastScan.Candidate);
+            UpdateTarget(lastScan.Candidate, lastScan.Mapping);
         }
         catch (Exception exception)
         {
@@ -89,7 +90,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
     }
 
-    private void UpdateTarget(IGameObject? candidate)
+    private void UpdateTarget(IGameObject? candidate, PrototypeMapping? mapping)
     {
         if (tracked is not null
             && (candidate is null || !tracked.Identity.Matches(candidate)))
@@ -105,7 +106,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             SetTransition("tracked_actor_changed_or_disappeared");
         }
 
-        if (candidate is null)
+        if (candidate is null || mapping is null)
         {
             failedIdentity = null;
             lastError = null;
@@ -124,7 +125,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
                 return;
             }
 
-            tracked = new TrackedActor(identity, original, ApplyStage.WriteVisible);
+            tracked = new TrackedActor(identity, original, mapping, ApplyStage.WriteVisible);
             lastError = null;
             SetTransition("target_acquired");
             Log.Information(
@@ -148,20 +149,24 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return;
         }
 
+        var desired = desiredBySource[state.Mapping.SourceCompanionRowId];
         var next = state.Stage switch
         {
             ApplyStage.WriteVisible when TryWrite(current, desired) => ApplyStage.Disable,
             ApplyStage.Disable when TryDisable(current) => ApplyStage.WriteHidden,
             ApplyStage.WriteHidden when TryWrite(current, desired) => ApplyStage.Enable,
             ApplyStage.Enable when TryEnable(current, desired) => ApplyStage.Finalize,
-            ApplyStage.Finalize when TryFinalizeHumanEquipment(current, desired) => ApplyStage.Verify,
+            ApplyStage.Finalize when TryFinalizeAppearance(current, desired) => ApplyStage.Verify,
             ApplyStage.Verify when IsApplied(current, desired) => ApplyStage.Applied,
             _ => ApplyStage.Failed,
         };
 
         if (next == ApplyStage.Failed)
         {
-            Log.Error("Y'shtola appearance apply failed at stage {Stage}; attempting one rollback.", state.Stage);
+            Log.Error(
+                "{TargetName} appearance apply failed at stage {Stage}; attempting one rollback.",
+                state.Mapping.TargetName,
+                state.Stage);
             lastError = $"appearance_apply_failed_at_{state.Stage}";
             SetTransition($"apply_failed_at_{state.Stage}");
             FailCurrentActor();
@@ -174,9 +179,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
         {
             lastError = null;
             Log.Information(
-                "Y'shtola appearance applied. Companion={CompanionRowId}, ENpcBase={EventNpcRowId}.",
-                PrototypeContract.SourceCompanionRowId,
-                PrototypeContract.TargetEventNpcRowId);
+                "{TargetName} appearance applied. Companion={CompanionRowId}, {TargetKind}={TargetRowId}, ModelChara={ModelCharaRowId}.",
+                state.Mapping.TargetName,
+                state.Mapping.SourceCompanionRowId,
+                state.Mapping.TargetKind,
+                state.Mapping.TargetRowId,
+                desired.ModelCharaId);
         }
     }
 
@@ -189,7 +197,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (TryResolve(state.Identity, out var current)
             && !TryImmediateRedraw(current, state.Original))
         {
-            Log.Error("Rollback failed for the current Y'shtola minion.");
+            Log.Error("Rollback failed for the current mapped minion.");
             lastError = "rollback_failed";
             SetTransition("rollback_failed");
         }
@@ -203,7 +211,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         var localPlayer = ObjectTable.LocalPlayer;
         var localPlayerAvailable = localPlayer is not null && localPlayer.Address != nint.Zero;
         var observations = new List<CompanionRuntimeObservation>();
-        var ownedTargets = new List<IGameObject>();
+        var ownedTargets = new List<TargetCandidate>();
         var validSourceCount = 0;
 
         foreach (var candidate in ObjectTable)
@@ -215,12 +223,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
             var ownership = ObserveOwnership(candidate, localPlayerAvailable ? localPlayer : null, valid);
             observations.Add(ObserveCompanion(candidate, valid, ownership));
 
-            if (candidate.BaseId != PrototypeContract.SourceCompanionRowId || !valid)
+            if (!valid || !PrototypeContract.TryGetMapping(candidate.BaseId, out var mapping))
                 continue;
 
             validSourceCount++;
             if (ownership.IsOwned)
-                ownedTargets.Add(candidate);
+                ownedTargets.Add(new TargetCandidate(candidate, mapping));
         }
 
         var selectionState = !localPlayerAvailable
@@ -243,7 +251,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
             : null;
 
         return new TargetScanResult(
-            ownedTargets.Count == 1 ? ownedTargets[0] : null,
+            ownedTargets.Count == 1 ? ownedTargets[0].Actor : null,
+            ownedTargets.Count == 1 ? ownedTargets[0].Mapping : null,
             localPlayerObservation,
             selectionState,
             observations);
@@ -314,7 +323,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
     {
         var character = (Character*)actor.Address;
         var gameObject = (GameObject*)actor.Address;
-        if (character == null || gameObject == null || gameObject->DrawObject == null)
+        var characterBase = gameObject == null ? null : gameObject->GetCharacterBase();
+        if (character == null || gameObject == null || gameObject->DrawObject == null || characterBase == null)
         {
             appearance = null!;
             return false;
@@ -323,7 +333,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
         appearance = new AppearancePayload(
             checked((uint)character->ModelContainer.ModelCharaId),
             character->DrawData.CustomizeData.Data.ToArray(),
-            character->DrawData.EquipmentModelIds.ToArray().Select(static item => item.Value).ToArray());
+            character->DrawData.EquipmentModelIds.ToArray().Select(static item => item.Value).ToArray(),
+            characterBase->GetModelType() == CharacterBase.ModelType.Human);
         return appearance.Customize.Length == 26 && appearance.Equipment.Length == 10;
     }
 
@@ -366,14 +377,18 @@ public sealed unsafe class Plugin : IDalamudPlugin
         return gameObject->DrawObject != null;
     }
 
-    private static bool TryFinalizeHumanEquipment(IGameObject actor, AppearancePayload appearance)
+    private static bool TryFinalizeAppearance(IGameObject actor, AppearancePayload appearance)
     {
         var gameObject = (GameObject*)actor.Address;
         var characterBase = gameObject == null ? null : gameObject->GetCharacterBase();
         var character = (Character*)actor.Address;
-        if (characterBase == null
-            || characterBase->GetModelType() != CharacterBase.ModelType.Human
-            || character == null
+        if (characterBase == null || character == null)
+            return false;
+
+        if (!appearance.IsHuman)
+            return characterBase->GetModelType() != CharacterBase.ModelType.Human;
+
+        if (characterBase->GetModelType() != CharacterBase.ModelType.Human
             || appearance.Equipment.Length != character->DrawData.EquipmentModelIds.Length)
         {
             return false;
@@ -394,9 +409,16 @@ public sealed unsafe class Plugin : IDalamudPlugin
         var characterBase = gameObject == null ? null : gameObject->GetCharacterBase();
         var character = (Character*)actor.Address;
         if (characterBase == null
-            || characterBase->GetModelType() != CharacterBase.ModelType.Human
             || character == null
-            || character->ModelContainer.ModelCharaId != appearance.ModelCharaId
+            || character->ModelContainer.ModelCharaId != appearance.ModelCharaId)
+        {
+            return false;
+        }
+
+        if (!appearance.IsHuman)
+            return characterBase->GetModelType() != CharacterBase.ModelType.Human;
+
+        if (characterBase->GetModelType() != CharacterBase.ModelType.Human
             || !appearance.Customize.AsSpan().SequenceEqual(character->DrawData.CustomizeData.Data))
         {
             return false;
@@ -427,8 +449,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
             var characterBase = gameObject->GetCharacterBase();
             return characterBase != null
-                && (characterBase->GetModelType() != CharacterBase.ModelType.Human
-                    || TryFinalizeHumanEquipment(actor, appearance))
+                && TryFinalizeAppearance(actor, appearance)
                 && IsBackingApplied(actor, appearance);
         }
         catch (Exception exception)
@@ -443,6 +464,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
         var character = (Character*)actor.Address;
         if (character == null || character->ModelContainer.ModelCharaId != appearance.ModelCharaId)
             return false;
+        if (!appearance.IsHuman)
+            return true;
         if (!appearance.Customize.AsSpan().SequenceEqual(character->DrawData.CustomizeData.Data))
             return false;
 
@@ -460,7 +483,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
             || current.Address == nint.Zero
             || !current.IsValid()
             || current.ObjectKind != ObjectKind.Companion
-            || current.BaseId != PrototypeContract.SourceCompanionRowId
+            || current.BaseId != identity.BaseId
+            || !PrototypeContract.TryGetMapping(current.BaseId, out _)
             || current.GameObjectId != identity.GameObjectId
             || current.EntityId != identity.EntityId
             || ObjectTable.LocalPlayer is not { } localPlayer
@@ -498,21 +522,46 @@ public sealed unsafe class Plugin : IDalamudPlugin
             RuntimeStateReporter.CurrentSchemaVersion,
             DateTimeOffset.UtcNow,
             pluginState,
-            PrototypeContract.SourceCompanionRowId,
-            PrototypeContract.TargetEventNpcRowId,
+            PrototypeContract.Mappings.Select(ObserveMapping).ToArray(),
             lastScan.LocalPlayer,
             lastScan.SelectionState,
             lastScan.Companions,
-            tracked is null ? null : ObserveTracked(tracked.Identity, tracked.Stage.ToString()),
-            failedIdentity is null ? null : ObserveTracked(failedIdentity.Value, "failed"),
+            tracked is null ? null : ObserveTracked(tracked.Identity, tracked.Mapping, tracked.Stage.ToString()),
+            failedIdentity is null ? null : ObserveFailed(failedIdentity.Value),
             lastTransition,
             lastTransitionAtUtc,
             lastError);
         stateReporter.TryWrite(snapshot, force);
     }
 
-    private static TrackedRuntimeObservation ObserveTracked(ActorIdentity identity, string stage)
-        => new(identity.ObjectIndex, Hex(identity.GameObjectId), Hex(identity.EntityId), stage);
+    private static RuntimeMappingObservation ObserveMapping(PrototypeMapping mapping)
+        => new(
+            mapping.SourceCompanionRowId,
+            mapping.SourceName,
+            mapping.TargetKind.ToString(),
+            mapping.TargetRowId,
+            mapping.TargetModelCharaRowId,
+            mapping.TargetName,
+            mapping.IsHuman);
+
+    private static TrackedRuntimeObservation? ObserveFailed(ActorIdentity identity)
+        => PrototypeContract.TryGetMapping(identity.BaseId, out var mapping)
+            ? ObserveTracked(identity, mapping, "failed")
+            : null;
+
+    private static TrackedRuntimeObservation ObserveTracked(
+        ActorIdentity identity,
+        PrototypeMapping mapping,
+        string stage)
+        => new(
+            identity.ObjectIndex,
+            Hex(identity.GameObjectId),
+            Hex(identity.EntityId),
+            mapping.SourceCompanionRowId,
+            mapping.TargetKind.ToString(),
+            mapping.TargetRowId,
+            mapping.TargetModelCharaRowId,
+            stage);
 
     private enum ApplyStage
     {
@@ -529,31 +578,37 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private readonly record struct ActorIdentity(
         ushort ObjectIndex,
         ulong GameObjectId,
-        uint EntityId)
+        uint EntityId,
+        uint BaseId)
     {
         public static ActorIdentity From(IGameObject actor)
-            => new(actor.ObjectIndex, actor.GameObjectId, actor.EntityId);
+            => new(actor.ObjectIndex, actor.GameObjectId, actor.EntityId, actor.BaseId);
 
         public bool Matches(IGameObject actor)
             => actor.ObjectIndex == ObjectIndex
                 && actor.GameObjectId == GameObjectId
-                && actor.EntityId == EntityId;
+                && actor.EntityId == EntityId
+                && actor.BaseId == BaseId;
     }
 
     private sealed record TrackedActor(
         ActorIdentity Identity,
         AppearancePayload Original,
+        PrototypeMapping Mapping,
         ApplyStage Stage);
 
     private readonly record struct OwnershipObservation(bool IsOwned, string Evidence);
 
     private sealed record TargetScanResult(
         IGameObject? Candidate,
+        PrototypeMapping? Mapping,
         LocalPlayerRuntimeObservation? LocalPlayer,
         string SelectionState,
         IReadOnlyList<CompanionRuntimeObservation> Companions)
     {
         public static TargetScanResult NotStarted { get; } =
-            new(null, null, "not_started", Array.Empty<CompanionRuntimeObservation>());
+            new(null, null, null, "not_started", Array.Empty<CompanionRuntimeObservation>());
     }
+
+    private sealed record TargetCandidate(IGameObject Actor, PrototypeMapping Mapping);
 }
