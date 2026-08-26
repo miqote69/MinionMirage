@@ -1,0 +1,12 @@
+{
+  "Author": "miqote69",
+  "Name": "Minion To NPC",
+  "Punchline": "Shows Y'shtola in place of the wind-up Y'shtola minion.",
+  "Description": "Local prototype that redraws Companion RowId 91 with the Human appearance from ENpcBase RowId 1003782.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "minion",
+    "npc",
+    "cosmetic"
+  ]
+}
