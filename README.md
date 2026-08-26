@@ -4,7 +4,7 @@ Local-first Dalamud plugin prototype.
 
 ## Initial scope
 
-- Detect `Companion RowId 91` (`wind-up Y'shtola`) when summoned by the local player.
+- Detect `Companion RowId 331` (`ファースト・ヤ・シュトラ`) when summoned by the local player.
 - Replace only that Companion's local draw appearance with `ENpcBase RowId 1003782` (`Y'shtola`).
 - Keep the original Companion entity and its follow/despawn lifecycle.
 - Restore or clean up safely when the Companion disappears or the plugin unloads.

@@ -4,7 +4,7 @@
 
 Verify that the development plugin publishes a readable, atomic snapshot of local-player, Companion selection, ownership, draw/model, tracking, apply, failure, and disposal state without moving Actor access outside the Dalamud Framework thread.
 
-The fixed prototype mapping remains Companion `91` to ENpcBase `1003782`. NPC appearance correctness and visual acceptance are separate runtime checks.
+The fixed prototype mapping is Companion `331` (`ファースト・ヤ・シュトラ`) to ENpcBase `1003782`. NPC appearance correctness and visual acceptance are separate runtime checks.
 
 ## Environment and levels
 
