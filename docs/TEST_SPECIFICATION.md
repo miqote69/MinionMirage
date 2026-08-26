@@ -13,7 +13,7 @@
 | MNP-STATE-009 | Atomic reader | Repeated background JSON reads during state changes never observe partial or malformed JSON. |
 | MNP-STATE-010 | Monster apply | Summon Companion 232. `tracked.stage=Applied`, `modelCharaId=1689`, `modelType=Monster`, and no Human equipment-finalization failure occurs. |
 | MNP-STATE-011 | Monster lifecycle | Dismiss and resummon Companion 232. Original minion restoration/despawn remains normal and the BOSS appearance is reapplied once. |
-| MNP-STATE-012 | Alisaie Human apply | Summon Companion 218. `tracked.stage=Applied`, `targetRowId=1017687`, `modelType=Human`, and the Alisaie mapping is recorded. |
-| MNP-STATE-013 | Alisaie lifecycle | Dismiss and resummon Companion 218. Original minion restoration/despawn remains normal and the Alisaie appearance is reapplied once. |
+| MNP-STATE-012 | Alisaie Avatar Human apply | Summon Companion 218. BNpcBase 10067 resolves BNpcCustomize 646 and NpcEquip 1713; `tracked.stage=Applied`, `targetKind=BattleNpc`, `targetRowId=10067`, `modelType=Human`, and the Alisaie Avatar mapping is recorded. Weapon replacement is excluded. |
+| MNP-STATE-013 | Alisaie Avatar lifecycle | Dismiss and resummon Companion 218. Original minion restoration/despawn remains normal and the Alisaie Avatar appearance is reapplied once. |
 
 All runtime cases use the actual plugin and FF14 object table. No fixture or synthetic Companion can satisfy MNP-STATE-002 through MNP-STATE-013.

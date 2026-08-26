@@ -23,10 +23,10 @@ internal static class PrototypeContract
         new(
             SourceCompanionRowId: 218,
             SourceName: "Alisaie",
-            TargetKind: PrototypeTargetKind.EventNpc,
-            TargetRowId: 1017687,
+            TargetKind: PrototypeTargetKind.BattleNpc,
+            TargetRowId: 10067,
             TargetModelCharaRowId: 0,
-            TargetName: "Alisaie",
+            TargetName: "Alisaie's Avatar",
             IsHuman: true),
     ];
 

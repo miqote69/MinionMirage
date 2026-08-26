@@ -8,9 +8,9 @@ The fixed prototype mappings are:
 
 - Companion `331` (`ファースト・ヤ・シュトラ`) to ENpcBase `1003782` (Human).
 - Companion `232` (`マメット・スカアハ`) to BNpcBase `6479`, ModelChara `1689` (Monster).
-- Companion `218` (`ニュー・アリゼー`) to ENpcBase `1017687` (Human).
+- Companion `218` (`ニュー・アリゼー`) to BNpcBase `10067`, BNpcCustomize `646`, NpcEquip `1713` (`アリゼーの幻体`, Human).
 
-NPC appearance correctness and visual acceptance are separate runtime checks.
+NPC appearance correctness and visual acceptance are separate runtime checks. Weapon replacement remains excluded.
 
 ## Environment and levels
 

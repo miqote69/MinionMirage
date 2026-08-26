@@ -76,12 +76,33 @@ internal static class TargetAppearanceResolver
         var model = row.ModelChara.ValueNullable
             ?? throw new InvalidOperationException(
                 $"ModelChara row {row.ModelChara.RowId} is unavailable for BNpcBase {row.RowId}.");
-        if (mapping.IsHuman || model.Type == 1)
-            throw new InvalidOperationException(
-                $"BNpcBase {row.RowId} does not resolve to a non-Human ModelChara.");
         if (row.ModelChara.RowId != mapping.TargetModelCharaRowId)
             throw new InvalidOperationException(
                 $"BNpcBase {row.RowId} resolved ModelChara {row.ModelChara.RowId}, expected {mapping.TargetModelCharaRowId}.");
+
+        if (mapping.IsHuman)
+        {
+            if (model.Type != 1)
+                throw new InvalidOperationException(
+                    $"BNpcBase {row.RowId} does not resolve to a Human ModelChara.");
+
+            var customize = row.BNpcCustomize.ValueNullable
+                ?? throw new InvalidOperationException(
+                    $"BNpcCustomize row {row.BNpcCustomize.RowId} is unavailable for BNpcBase {row.RowId}.");
+            var equipment = row.NpcEquip.ValueNullable
+                ?? throw new InvalidOperationException(
+                    $"NpcEquip row {row.NpcEquip.RowId} is unavailable for BNpcBase {row.RowId}.");
+
+            return new AppearancePayload(
+                row.ModelChara.RowId,
+                CreateCustomize(customize),
+                CreateEquipment(equipment),
+                IsHuman: true);
+        }
+
+        if (model.Type == 1)
+            throw new InvalidOperationException(
+                $"BNpcBase {row.RowId} does not resolve to a non-Human ModelChara.");
 
         return new AppearancePayload(
             row.ModelChara.RowId,
@@ -89,6 +110,37 @@ internal static class TargetAppearanceResolver
             new ulong[10],
             IsHuman: false);
     }
+
+    private static byte[] CreateCustomize(BNpcCustomize row)
+        =>
+        [
+            checked((byte)row.Race.RowId),
+            checked((byte)row.Gender),
+            row.BodyType,
+            row.Height,
+            checked((byte)row.Tribe.RowId),
+            row.Face,
+            row.HairStyle,
+            row.HairHighlight,
+            row.SkinColor,
+            row.EyeHeterochromia,
+            row.HairColor,
+            row.HairHighlightColor,
+            row.FacialFeature,
+            row.FacialFeatureColor,
+            row.Eyebrows,
+            row.EyeColor,
+            row.EyeShape,
+            row.Nose,
+            row.Jaw,
+            row.Mouth,
+            row.LipColor,
+            row.BustOrTone1,
+            row.ExtraFeature1,
+            row.ExtraFeature2OrBust,
+            row.FacePaint,
+            row.FacePaintColor,
+        ];
 
     private static ulong[] CreateEquipment(ENpcBase row)
         =>
