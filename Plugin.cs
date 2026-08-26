@@ -22,12 +22,18 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private readonly NativeDrawObjectInjector injector;
     private readonly AppearancePayload desired;
+    private readonly RuntimeStateReporter stateReporter;
     private TrackedActor? tracked;
     private ActorIdentity? failedIdentity;
+    private TargetScanResult lastScan = TargetScanResult.NotStarted;
+    private string lastTransition = "loaded";
+    private DateTimeOffset lastTransitionAtUtc = DateTimeOffset.UtcNow;
+    private string? lastError;
     private bool disposed;
 
-    public Plugin()
+    public Plugin(IDalamudPluginInterface pluginInterface)
     {
+        stateReporter = new RuntimeStateReporter(pluginInterface.ConfigDirectory.FullName, Log);
         desired = YshtolaAppearanceResolver.Resolve(DataManager);
         injector = new NativeDrawObjectInjector(Interop);
         Framework.Update += OnFrameworkUpdate;
@@ -36,6 +42,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
             "MinionToNPC prototype loaded. Companion={CompanionRowId}, ENpcBase={EventNpcRowId}.",
             PrototypeContract.SourceCompanionRowId,
             PrototypeContract.TargetEventNpcRowId);
+        Log.Information("MinionToNPC runtime state: {StateFilePath}", stateReporter.StateFilePath);
+        PublishRuntimeState("running", force: true);
     }
 
     public void Dispose()
@@ -49,10 +57,15 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (tracked is not null && TryResolve(tracked.Identity, out var current))
         {
             if (!TryImmediateRedraw(current, tracked.Original))
+            {
                 Log.Error("Failed to restore the tracked Y'shtola minion while unloading.");
+                lastError = "unload_restore_failed";
+            }
         }
 
+        SetTransition("disposed");
         tracked = null;
+        PublishRuntimeState("disposed", force: true);
         injector.Dispose();
     }
 
@@ -60,19 +73,24 @@ public sealed unsafe class Plugin : IDalamudPlugin
     {
         try
         {
-            UpdateTarget();
+            lastScan = ScanTargets();
+            UpdateTarget(lastScan.Candidate);
         }
         catch (Exception exception)
         {
             Log.Error(exception, "MinionToNPC update failed; stopping writes for the current actor.");
+            lastError = exception.Message;
+            SetTransition("update_failed");
             FailCurrentActor();
+        }
+        finally
+        {
+            PublishRuntimeState(lastError is null ? "running" : "error");
         }
     }
 
-    private void UpdateTarget()
+    private void UpdateTarget(IGameObject? candidate)
     {
-        var candidate = FindTarget();
-
         if (tracked is not null
             && (candidate is null || !tracked.Identity.Matches(candidate)))
         {
@@ -80,14 +98,17 @@ public sealed unsafe class Plugin : IDalamudPlugin
                 && !TryImmediateRedraw(oldActor, tracked.Original))
             {
                 Log.Error("Failed to restore the previous tracked Companion before identity changed.");
+                lastError = "previous_actor_restore_failed";
             }
 
             tracked = null;
+            SetTransition("tracked_actor_changed_or_disappeared");
         }
 
         if (candidate is null)
         {
             failedIdentity = null;
+            lastError = null;
             return;
         }
 
@@ -98,9 +119,14 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (tracked is null)
         {
             if (!TryCapture(candidate, out var original))
+            {
+                SetTransition("capture_not_ready");
                 return;
+            }
 
             tracked = new TrackedActor(identity, original, ApplyStage.WriteVisible);
+            lastError = null;
+            SetTransition("target_acquired");
             Log.Information(
                 "Target Companion acquired. ObjectIndex={ObjectIndex}, GameObjectId={GameObjectId:X16}.",
                 identity.ObjectIndex,
@@ -136,13 +162,17 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (next == ApplyStage.Failed)
         {
             Log.Error("Y'shtola appearance apply failed at stage {Stage}; attempting one rollback.", state.Stage);
+            lastError = $"appearance_apply_failed_at_{state.Stage}";
+            SetTransition($"apply_failed_at_{state.Stage}");
             FailCurrentActor();
             return;
         }
 
         tracked = state with { Stage = next };
+        SetTransition($"apply_{state.Stage}_to_{next}");
         if (next == ApplyStage.Applied)
         {
+            lastError = null;
             Log.Information(
                 "Y'shtola appearance applied. Companion={CompanionRowId}, ENpcBase={EventNpcRowId}.",
                 PrototypeContract.SourceCompanionRowId,
@@ -160,49 +190,124 @@ public sealed unsafe class Plugin : IDalamudPlugin
             && !TryImmediateRedraw(current, state.Original))
         {
             Log.Error("Rollback failed for the current Y'shtola minion.");
+            lastError = "rollback_failed";
+            SetTransition("rollback_failed");
         }
 
         failedIdentity = state.Identity;
         tracked = null;
     }
 
-    private static IGameObject? FindTarget()
+    private static TargetScanResult ScanTargets()
     {
         var localPlayer = ObjectTable.LocalPlayer;
-        if (localPlayer is null || localPlayer.Address == nint.Zero)
-            return null;
+        var localPlayerAvailable = localPlayer is not null && localPlayer.Address != nint.Zero;
+        var observations = new List<CompanionRuntimeObservation>();
+        var ownedTargets = new List<IGameObject>();
+        var validSourceCount = 0;
 
-        IGameObject? result = null;
         foreach (var candidate in ObjectTable)
         {
-            if (candidate.ObjectKind != ObjectKind.Companion
-                || candidate.BaseId != PrototypeContract.SourceCompanionRowId
-                || candidate.Address == nint.Zero
-                || !candidate.IsValid()
-                || !IsOwnedByLocalPlayer(candidate, localPlayer))
-            {
+            if (candidate.ObjectKind != ObjectKind.Companion)
                 continue;
-            }
 
-            if (result is not null)
-                return null;
-            result = candidate;
+            var valid = candidate.Address != nint.Zero && candidate.IsValid();
+            var ownership = ObserveOwnership(candidate, localPlayerAvailable ? localPlayer : null, valid);
+            observations.Add(ObserveCompanion(candidate, valid, ownership));
+
+            if (candidate.BaseId != PrototypeContract.SourceCompanionRowId || !valid)
+                continue;
+
+            validSourceCount++;
+            if (ownership.IsOwned)
+                ownedTargets.Add(candidate);
         }
 
-        return result;
+        var selectionState = !localPlayerAvailable
+            ? "local_player_unavailable"
+            : observations.Count == 0
+                ? "no_companion"
+                : validSourceCount == 0
+                    ? "source_not_present"
+                    : ownedTargets.Count == 0
+                        ? "source_not_owned"
+                        : ownedTargets.Count > 1
+                            ? "multiple_owned_sources"
+                            : "target_ready";
+
+        var localPlayerObservation = localPlayerAvailable
+            ? new LocalPlayerRuntimeObservation(
+                localPlayer!.ObjectIndex,
+                Hex(localPlayer.GameObjectId),
+                Hex(localPlayer.EntityId))
+            : null;
+
+        return new TargetScanResult(
+            ownedTargets.Count == 1 ? ownedTargets[0] : null,
+            localPlayerObservation,
+            selectionState,
+            observations);
     }
 
     private static bool IsOwnedByLocalPlayer(IGameObject candidate, IGameObject localPlayer)
+        => ObserveOwnership(candidate, localPlayer, candidate.Address != nint.Zero && candidate.IsValid()).IsOwned;
+
+    private static OwnershipObservation ObserveOwnership(
+        IGameObject candidate,
+        IGameObject? localPlayer,
+        bool candidateValid)
     {
+        if (!candidateValid)
+            return new OwnershipObservation(false, "candidate_invalid");
+        if (localPlayer is null || localPlayer.Address == nint.Zero)
+            return new OwnershipObservation(false, "local_player_unavailable");
+
         var companion = (Companion*)candidate.Address;
         if (companion->Owner == (BattleChara*)localPlayer.Address)
-            return true;
+            return new OwnershipObservation(true, "native_owner_pointer");
 
         var localEntityId = GetObjectIdPart(localPlayer.EntityId);
         var localGameObjectId = GetObjectIdPart(localPlayer.GameObjectId);
         var ownerId = GetObjectIdPart(candidate.OwnerId);
-        return IsSameObjectId(ownerId, localEntityId)
-            || IsSameObjectId(ownerId, localGameObjectId);
+        if (IsSameObjectId(ownerId, localEntityId))
+            return new OwnershipObservation(true, "owner_id_matches_entity_id");
+        if (IsSameObjectId(ownerId, localGameObjectId))
+            return new OwnershipObservation(true, "owner_id_matches_game_object_id");
+        return new OwnershipObservation(false, "owner_mismatch");
+    }
+
+    private static CompanionRuntimeObservation ObserveCompanion(
+        IGameObject candidate,
+        bool valid,
+        OwnershipObservation ownership)
+    {
+        int? modelCharaId = null;
+        var drawObjectPresent = false;
+        string? modelType = null;
+
+        if (valid)
+        {
+            var character = (Character*)candidate.Address;
+            var gameObject = (GameObject*)candidate.Address;
+            modelCharaId = character->ModelContainer.ModelCharaId;
+            drawObjectPresent = gameObject->DrawObject != null;
+            var characterBase = gameObject->GetCharacterBase();
+            modelType = characterBase == null ? null : characterBase->GetModelType().ToString();
+        }
+
+        return new CompanionRuntimeObservation(
+            candidate.ObjectIndex,
+            candidate.BaseId,
+            candidate.Name.ToString(),
+            Hex(candidate.GameObjectId),
+            Hex(candidate.EntityId),
+            Hex(candidate.OwnerId),
+            valid,
+            ownership.IsOwned,
+            ownership.Evidence,
+            modelCharaId,
+            drawObjectPresent,
+            modelType);
     }
 
     private static bool TryCapture(IGameObject actor, out AppearancePayload appearance)
@@ -375,6 +480,40 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private static uint GetObjectIdPart(ulong value)
         => (uint)(value & uint.MaxValue);
 
+    private static string Hex(ulong value)
+        => $"0x{value:X16}";
+
+    private void SetTransition(string transition)
+    {
+        if (string.Equals(lastTransition, transition, StringComparison.Ordinal))
+            return;
+
+        lastTransition = transition;
+        lastTransitionAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    private void PublishRuntimeState(string pluginState, bool force = false)
+    {
+        var snapshot = new RuntimeStateSnapshot(
+            RuntimeStateReporter.CurrentSchemaVersion,
+            DateTimeOffset.UtcNow,
+            pluginState,
+            PrototypeContract.SourceCompanionRowId,
+            PrototypeContract.TargetEventNpcRowId,
+            lastScan.LocalPlayer,
+            lastScan.SelectionState,
+            lastScan.Companions,
+            tracked is null ? null : ObserveTracked(tracked.Identity, tracked.Stage.ToString()),
+            failedIdentity is null ? null : ObserveTracked(failedIdentity.Value, "failed"),
+            lastTransition,
+            lastTransitionAtUtc,
+            lastError);
+        stateReporter.TryWrite(snapshot, force);
+    }
+
+    private static TrackedRuntimeObservation ObserveTracked(ActorIdentity identity, string stage)
+        => new(identity.ObjectIndex, Hex(identity.GameObjectId), Hex(identity.EntityId), stage);
+
     private enum ApplyStage
     {
         WriteVisible,
@@ -405,4 +544,16 @@ public sealed unsafe class Plugin : IDalamudPlugin
         ActorIdentity Identity,
         AppearancePayload Original,
         ApplyStage Stage);
+
+    private readonly record struct OwnershipObservation(bool IsOwned, string Evidence);
+
+    private sealed record TargetScanResult(
+        IGameObject? Candidate,
+        LocalPlayerRuntimeObservation? LocalPlayer,
+        string SelectionState,
+        IReadOnlyList<CompanionRuntimeObservation> Companions)
+    {
+        public static TargetScanResult NotStarted { get; } =
+            new(null, null, "not_started", Array.Empty<CompanionRuntimeObservation>());
+    }
 }
