@@ -8,6 +8,7 @@ The fixed prototype mappings are:
 
 - Companion `331` (`ファースト・ヤ・シュトラ`) to ENpcBase `1003782` (Human).
 - Companion `232` (`マメット・スカアハ`) to BNpcBase `6479`, ModelChara `1689` (Monster).
+- Companion `218` (`ニュー・アリゼー`) to ENpcBase `1017687` (Human).
 
 NPC appearance correctness and visual acceptance are separate runtime checks.
 
@@ -21,7 +22,7 @@ NPC appearance correctness and visual acceptance are separate runtime checks.
 
 - Entry: source builds and the Dev Plugin loads.
 - Suspend on plugin load failure, missing state path, invalid JSON, stale heartbeat over 5 seconds while Framework updates continue, or state-writer error.
-- Exit: both mappings, wrong-minion, Human/Monster verification, apply/failure, despawn, and unload states are distinguishable; build regression passes.
+- Exit: all three mappings, wrong-minion, Human/Monster verification, apply/failure, despawn, and unload states are distinguishable; build regression passes.
 
 ## Evidence and authority
 

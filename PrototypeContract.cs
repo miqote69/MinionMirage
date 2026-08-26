@@ -20,6 +20,14 @@ internal static class PrototypeContract
             TargetModelCharaRowId: 1689,
             TargetName: "Scathach",
             IsHuman: false),
+        new(
+            SourceCompanionRowId: 218,
+            SourceName: "Alisaie",
+            TargetKind: PrototypeTargetKind.EventNpc,
+            TargetRowId: 1017687,
+            TargetModelCharaRowId: 0,
+            TargetName: "Alisaie",
+            IsHuman: true),
     ];
 
     public static bool TryGetMapping(uint sourceCompanionRowId, out PrototypeMapping mapping)
