@@ -323,6 +323,16 @@ internal static class PrototypeContract
             IsHuman: true,
             TargetModelScale: null,
             AppearanceCategory: PrototypeAppearanceCategory.Human),
+        new(
+            SourceCompanionRowId: 587,
+            SourceName: "Wuk Lamat",
+            TargetKind: PrototypeTargetKind.EventNpc,
+            TargetRowId: 1046762,
+            TargetModelCharaRowId: 0,
+            TargetName: "Wuk Lamat",
+            IsHuman: true,
+            TargetModelScale: null,
+            AppearanceCategory: PrototypeAppearanceCategory.Human),
     ];
 
     private static readonly IReadOnlyDictionary<uint, IReadOnlyList<PrototypeMapping>> TargetCandidatesBySource =

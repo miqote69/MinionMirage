@@ -2,9 +2,9 @@
   <PropertyGroup>
     <AssemblyName>MinionMirage</AssemblyName>
     <RootNamespace>MinionMirage</RootNamespace>
-    <Version>0.1.0-beta.2</Version>
-    <AssemblyVersion>0.1.0.1</AssemblyVersion>
-    <FileVersion>0.1.0.1</FileVersion>
+    <Version>0.1.0-beta.3</Version>
+    <AssemblyVersion>0.1.0.2</AssemblyVersion>
+    <FileVersion>0.1.0.2</FileVersion>
     <IconUrl>https://raw.githubusercontent.com/miqote69/MinionMirage-Distribution/main/.dalamud/2d478e48ca56c3c2453cc2e69d41d02e54c41e23c6c69cf805b332a916273011/icon.png</IconUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
