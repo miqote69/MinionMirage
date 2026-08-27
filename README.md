@@ -7,23 +7,15 @@ It preserves the game's Companion actor, follow behavior, summon, replacement, a
 > [!CAUTION]
 > Minion Mirage `0.1.0-beta.1` is an early beta and remains under active development. Native appearance redraws and the experimental summon feature may cause incorrect actor states or crash the game. Use the plugin at your own risk.
 
-## Install for private beta testing
+## Install for beta testing
 
-Minion Mirage is not currently distributed through a public Dalamud repository.
+Add the following URL to **Dalamud Settings → Experimental → Custom Plugin Repositories**:
 
-1. Build the project:
+```text
+https://raw.githubusercontent.com/miqote69/MinionMirage-Distribution/main/.dalamud/2d478e48ca56c3c2453cc2e69d41d02e54c41e23c6c69cf805b332a916273011/repo.json
+```
 
-   ```text
-   dotnet build MinionMirage.csproj -c Release
-   ```
-
-2. Add the resulting file to Dalamud's Dev Plugin locations:
-
-   ```text
-   bin/Release/MinionMirage.dll
-   ```
-
-3. Open Minion Mirage from the Dev Plugin list and select **Settings**.
+The URL is intentionally difficult to guess, but it is not an authentication mechanism. Anyone who receives the URL can use it.
 
 ## Features
 
