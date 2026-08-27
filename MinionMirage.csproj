@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>MinionMirage</AssemblyName>
     <RootNamespace>MinionMirage</RootNamespace>
-    <Version>0.0.0.1</Version>
+    <Version>0.1.0-beta.1</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
