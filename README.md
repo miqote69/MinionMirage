@@ -1,4 +1,4 @@
-# MinionToNPC
+# Minion Mirage
 
 Local-first Dalamud plugin prototype.
 

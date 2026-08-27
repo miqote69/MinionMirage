@@ -1,49 +1,63 @@
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Hooking;
 using Dalamud.IoC;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
-using Dalamud.Plugin.Ipc;
-using Dalamud.Plugin.Ipc.Exceptions;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
-using MinionToNPC.Localization;
+using MinionMirage.Localization;
 using System.Reflection;
 using CompanionSheet = Lumina.Excel.Sheets.Companion;
 using GameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 using NativeVisibilityFlags = FFXIVClientStructs.FFXIV.Client.Game.Object.VisibilityFlags;
 
-namespace MinionToNPC;
+namespace MinionMirage;
 
 public sealed unsafe class Plugin : IDalamudPlugin
 {
-    public const string DisplayName = "Minion To NPC";
+    public const string DisplayName = "Minion Mirage";
     private const int CharacterBaseModelScaleOffset = 0x2A4;
-    private const ulong GlamourerRevertEquipmentAndCustomization = 0x02 | 0x04;
+    private const uint MinionHiddenActionStatus = 1325;
 
     [PluginService] private static IObjectTable ObjectTable { get; set; } = null!;
     [PluginService] private static IFramework Framework { get; set; } = null!;
     [PluginService] private static IDataManager DataManager { get; set; } = null!;
     [PluginService] private static IClientState ClientState { get; set; } = null!;
     [PluginService] private static ITextureProvider TextureProvider { get; set; } = null!;
+    [PluginService] private static IGameInteropProvider GameInteropProvider { get; set; } = null!;
     [PluginService] private static IPluginLog Log { get; set; } = null!;
 
     private readonly IDalamudPluginInterface pluginInterface;
-    private readonly ICallGateSubscriber<int, uint, ulong, int> glamourerRevertState;
     private readonly IReadOnlyDictionary<PrototypeTargetKey, AppearancePayload> desiredByTarget;
     private readonly IReadOnlyDictionary<uint, uint> sourceModelCharaBySource;
+    private readonly IReadOnlyDictionary<uint, ushort> sourceOrderBySource;
     private readonly RuntimeStateReporter stateReporter;
+    private readonly Hook<GetActionStatusDelegate>? getActionStatusHook;
+    private readonly Hook<UseActionDelegate>? useActionHook;
     private readonly ConfigWindow configWindow;
-    private readonly WindowSystem windowSystem = new("MinionToNPC");
+    private readonly WindowSystem windowSystem = new("MinionMirage");
     private TrackedActor? tracked;
     private FailedActorState? failedActor;
     private TargetScanResult lastScan = TargetScanResult.NotStarted;
     private string lastTransition = "loaded";
     private DateTimeOffset lastTransitionAtUtc = DateTimeOffset.UtcNow;
     private string? lastError;
+    private int normalSummonUnlockEnabled;
+    private long normalSummonBypassCount;
+    private int normalSummonLastBypassedRowId;
+    private int normalSummonLastOriginalStatus;
+    private long normalSummonLastBypassedUtcTicks;
+    private long normalSummonLastReportedBypassCount;
+    private long normalSummonIconClickCount;
+    private int normalSummonLastIconClickRowId;
+    private string? normalSummonLastIconClickResult;
     private bool disposed;
 
     public Configuration Configuration { get; }
@@ -63,8 +77,6 @@ public sealed unsafe class Plugin : IDalamudPlugin
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
         this.pluginInterface = pluginInterface;
-        glamourerRevertState =
-            pluginInterface.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
         Configuration = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var configurationChanged = NormalizeConfiguration();
         if (configurationChanged)
@@ -91,12 +103,60 @@ public sealed unsafe class Plugin : IDalamudPlugin
                     ? companion.Model.RowId
                     : throw new InvalidOperationException(
                         $"Companion {mapping.SourceCompanionRowId} has no source ModelChara."));
+        sourceOrderBySource = PrototypeContract.Mappings.ToDictionary(
+            mapping => mapping.SourceCompanionRowId,
+            mapping => companionSheet.TryGetRow(mapping.SourceCompanionRowId, out var companion)
+                ? companion.Order
+                : ushort.MaxValue);
+        Hook<GetActionStatusDelegate>? createdStatusHook = null;
+        Hook<UseActionDelegate>? createdActionHook = null;
+        try
+        {
+            createdStatusHook = GameInteropProvider.HookFromAddress<GetActionStatusDelegate>(
+                (nint)ActionManager.MemberFunctionPointers.GetActionStatus,
+                GetActionStatusDetour);
+            createdActionHook = GameInteropProvider.HookFromAddress<UseActionDelegate>(
+                (nint)ActionManager.MemberFunctionPointers.UseAction,
+                UseActionDetour);
+            getActionStatusHook = createdStatusHook;
+            useActionHook = createdActionHook;
+            if (Configuration.ExperimentalEnableNormalCompanionSummon)
+            {
+                Volatile.Write(ref normalSummonUnlockEnabled, 1);
+                useActionHook.Enable();
+                getActionStatusHook.Enable();
+            }
+        }
+        catch (Exception exception)
+        {
+            if (createdActionHook is not null)
+            {
+                if (createdActionHook.IsEnabled)
+                    createdActionHook.Disable();
+                createdActionHook.Dispose();
+            }
+            if (createdStatusHook is not null)
+            {
+                if (createdStatusHook.IsEnabled)
+                    createdStatusHook.Disable();
+                createdStatusHook.Dispose();
+            }
+            getActionStatusHook = null;
+            useActionHook = null;
+            Volatile.Write(ref normalSummonUnlockEnabled, 0);
+            if (Configuration.ExperimentalEnableNormalCompanionSummon)
+            {
+                Configuration.ExperimentalEnableNormalCompanionSummon = false;
+                SaveConfiguration();
+            }
+            Log.Error(exception, "Normal Companion summon unlock hook is unavailable.");
+        }
         Framework.Update += OnFrameworkUpdate;
 
         Log.Information(
-            "MinionToNPC prototype loaded. MappingCount={MappingCount}.",
+            "Minion Mirage loaded. MappingCount={MappingCount}.",
             PrototypeContract.Mappings.Count);
-        Log.Information("MinionToNPC runtime state: {StateFilePath}", stateReporter.StateFilePath);
+        Log.Information("Minion Mirage runtime state: {StateFilePath}", stateReporter.StateFilePath);
         PublishRuntimeState("running", force: true);
     }
 
@@ -109,6 +169,19 @@ public sealed unsafe class Plugin : IDalamudPlugin
         Framework.Update -= OnFrameworkUpdate;
         pluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         pluginInterface.UiBuilder.Draw -= windowSystem.Draw;
+        Volatile.Write(ref normalSummonUnlockEnabled, 0);
+        if (getActionStatusHook is not null)
+        {
+            if (getActionStatusHook.IsEnabled)
+                getActionStatusHook.Disable();
+            getActionStatusHook.Dispose();
+        }
+        if (useActionHook is not null)
+        {
+            if (useActionHook.IsEnabled)
+                useActionHook.Disable();
+            useActionHook.Dispose();
+        }
 
         if (tracked is not null && TryResolve(tracked.Identity, out var current))
         {
@@ -161,6 +234,60 @@ public sealed unsafe class Plugin : IDalamudPlugin
         SaveConfiguration();
     }
 
+    public void SetExperimentalEnableNormalCompanionSummon(bool enabled)
+    {
+        if (Configuration.ExperimentalEnableNormalCompanionSummon == enabled)
+            return;
+
+        if (getActionStatusHook is null || useActionHook is null)
+        {
+            SetTransition("normal_summon_unlock_hook_unavailable");
+            Log.Error("Normal Companion summon unlock could not be enabled because its native hook is unavailable.");
+            PublishRuntimeState(lastError is null ? "running" : "error", force: true);
+            return;
+        }
+
+        try
+        {
+            if (enabled)
+            {
+                Volatile.Write(ref normalSummonUnlockEnabled, 1);
+                useActionHook.Enable();
+                getActionStatusHook.Enable();
+            }
+            else
+            {
+                Volatile.Write(ref normalSummonUnlockEnabled, 0);
+                getActionStatusHook.Disable();
+                useActionHook.Disable();
+            }
+
+            Configuration.ExperimentalEnableNormalCompanionSummon = enabled;
+            SaveConfiguration();
+            SetTransition(enabled
+                ? "normal_summon_unlock_enabled"
+                : "normal_summon_unlock_disabled");
+            Log.Warning(
+                "Experimental normal Companion summon unlock {State}. Status {OriginalStatus} is bypassed; rejected native actions use the local Companion transition with parameter 1. These native hooks may crash the game.",
+                enabled ? "enabled" : "disabled",
+                MinionHiddenActionStatus);
+        }
+        catch (Exception exception)
+        {
+            Volatile.Write(ref normalSummonUnlockEnabled, 0);
+            if (getActionStatusHook.IsEnabled)
+                getActionStatusHook.Disable();
+            if (useActionHook.IsEnabled)
+                useActionHook.Disable();
+            Configuration.ExperimentalEnableNormalCompanionSummon = false;
+            SaveConfiguration();
+            SetTransition("normal_summon_unlock_toggle_failed");
+            Log.Error(exception, "Normal Companion summon unlock toggle failed and was disabled.");
+        }
+
+        PublishRuntimeState(lastError is null ? "running" : "error", force: true);
+    }
+
     public void SetAllMappingsEnabled(bool enabled)
     {
         var changed = false;
@@ -196,6 +323,15 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
 
         return mapping.SourceName;
+    }
+
+    internal ushort GetCompanionOrder(PrototypeMapping mapping)
+        => sourceOrderBySource.GetValueOrDefault(mapping.SourceCompanionRowId, ushort.MaxValue);
+
+    internal bool IsCompanionUnlocked(uint companionRowId)
+    {
+        var uiState = UIState.Instance();
+        return uiState == null || uiState->IsCompanionUnlocked(companionRowId);
     }
 
     internal PrototypeMapping GetSelectedMapping(PrototypeMapping sourceMapping)
@@ -294,9 +430,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
             }
         }
 
-        if (Configuration.Version != 2)
+        if (Configuration.Version != 5)
         {
-            Configuration.Version = 2;
+            Configuration.Version = 5;
             changed = true;
         }
 
@@ -311,11 +447,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
         try
         {
             lastScan = ScanTargets();
+            UpdateNormalSummonUnlockState();
             UpdateTarget(lastScan.Candidate, lastScan.Mapping);
         }
         catch (Exception exception)
         {
-            Log.Error(exception, "MinionToNPC update failed; stopping writes for the current actor.");
+            Log.Error(exception, "Minion Mirage update failed; stopping writes for the current actor.");
             lastError = exception.Message;
             SetTransition("update_failed");
             FailCurrentActor();
@@ -333,26 +470,38 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (tracked is not null
             && (candidate is null || !tracked.Identity.Matches(candidate)))
         {
-            if (TryResolve(tracked.Identity, out var oldActor)
+            var trackedIdentityStillPresent = IsIdentityPresent(tracked.Identity);
+            var trackedMappingStillEnabled = Configuration.IsMappingEnabled(
+                tracked.Mapping.SourceCompanionRowId);
+
+            if (candidate is null
+                && trackedIdentityStillPresent
+                && trackedMappingStillEnabled)
+            {
+                if (tracked.Stage == ApplyStage.Redrawn
+                    && TryResolve(tracked.Identity, out var retainedActor))
+                {
+                    PreserveModelScaleIfAvailable(retainedActor, tracked.Mapping.TargetModelScale);
+                }
+
+                return;
+            }
+
+            var restoreDisabledMapping = candidate is null
+                && trackedIdentityStillPresent
+                && !trackedMappingStillEnabled;
+            if (restoreDisabledMapping
+                && TryResolve(tracked.Identity, out var oldActor)
                 && !TryApplyAppearance(oldActor, tracked.Original, tracked.OriginalModelScale))
             {
-                Log.Error("Failed to restore the previous tracked Companion before identity changed.");
+                Log.Error("Failed to restore the tracked Companion after its mapping was disabled.");
                 lastError = "previous_actor_restore_failed";
             }
 
             tracked = null;
-            SetTransition("tracked_actor_changed_or_disappeared");
-        }
-
-        if (tracked is not null
-            && candidate is not null
-            && mapping is not null
-            && tracked.Identity.Matches(candidate)
-            && tracked.Stage == ApplyStage.GlamourerReleased
-            && PrototypeContract.GetTargetKey(tracked.Mapping) == PrototypeContract.GetTargetKey(mapping))
-        {
-            tracked = tracked with { Stage = ApplyStage.Pending };
-            SetTransition("glamourer_release_cancelled");
+            SetTransition(restoreDisabledMapping
+                ? "tracked_actor_restored_after_mapping_disabled"
+                : "tracked_actor_released");
         }
 
         if (tracked is not null
@@ -372,31 +521,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
                 return;
             }
 
-            if (previous.Stage != ApplyStage.GlamourerReleased)
-            {
-                var releaseResult = TryReleaseGlamourerHumanState(oldActor, previous.Mapping);
-                if (releaseResult == GlamourerReleaseResult.Failed)
-                {
-                    Log.Error("Failed to release Glamourer state before the target selection changed.");
-                    lastError = "glamourer_revert_failed";
-                    failedActor = new FailedActorState(previous.Identity, previous.Mapping);
-                    tracked = null;
-                    SetTransition("glamourer_revert_failed");
-                    return;
-                }
-
-                if (releaseResult == GlamourerReleaseResult.Released)
-                {
-                    tracked = previous with { Stage = ApplyStage.GlamourerReleased };
-                    SetTransition("glamourer_state_released");
-                    return;
-                }
-            }
-
             tracked = previous with
             {
                 Mapping = mapping,
                 Stage = ApplyStage.Pending,
+                AppliedDrawObject = nint.Zero,
             };
             lastError = null;
             SetTransition("target_selection_changed");
@@ -428,7 +557,13 @@ public sealed unsafe class Plugin : IDalamudPlugin
                 return;
             }
 
-            tracked = new TrackedActor(identity, original, originalModelScale, mapping, ApplyStage.Pending);
+            tracked = new TrackedActor(
+                identity,
+                original,
+                originalModelScale,
+                mapping,
+                ApplyStage.Pending,
+                nint.Zero);
             lastError = null;
             SetTransition("target_acquired");
             Log.Information(
@@ -438,52 +573,6 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
 
         AdvanceTrackedActor();
-    }
-
-    private GlamourerReleaseResult TryReleaseGlamourerHumanState(IGameObject actor, PrototypeMapping mapping)
-    {
-        if (!mapping.IsHuman || !glamourerRevertState.HasFunction)
-            return GlamourerReleaseResult.NotRequired;
-
-        try
-        {
-            var result = glamourerRevertState.InvokeFunc(
-                actor.ObjectIndex,
-                0,
-                GlamourerRevertEquipmentAndCustomization);
-            if (result is 0 or 1 or 3)
-            {
-                if (result == 0)
-                {
-                    PreserveModelScaleIfAvailable(actor, mapping.TargetModelScale);
-                    Log.Information(
-                        "Released retained Glamourer state before switching Companion {CompanionRowId} target.",
-                        mapping.SourceCompanionRowId);
-                }
-
-                return result == 0
-                    ? GlamourerReleaseResult.Released
-                    : GlamourerReleaseResult.NotRequired;
-            }
-
-            Log.Error(
-                "Glamourer.RevertState rejected Companion {CompanionRowId} target switch with result {Result}.",
-                mapping.SourceCompanionRowId,
-                result);
-            return GlamourerReleaseResult.Failed;
-        }
-        catch (IpcNotReadyError)
-        {
-            return GlamourerReleaseResult.NotRequired;
-        }
-        catch (Exception exception)
-        {
-            Log.Error(
-                exception,
-                "Glamourer.RevertState failed before switching Companion {CompanionRowId} target.",
-                mapping.SourceCompanionRowId);
-            return GlamourerReleaseResult.Failed;
-        }
     }
 
     private bool IsSourceModelReady(IGameObject actor, PrototypeMapping mapping)
@@ -497,12 +586,35 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private void AdvanceTrackedActor()
     {
         var state = tracked;
-        if (state is null || state.Stage == ApplyStage.Redrawn)
+        if (state is null)
             return;
 
         if (!TryResolve(state.Identity, out var current))
         {
             tracked = null;
+            return;
+        }
+
+        if (state.Stage == ApplyStage.Redrawn)
+        {
+            PreserveModelScaleIfAvailable(current, state.Mapping.TargetModelScale);
+
+            var gameObject = (GameObject*)current.Address;
+            var currentDrawObject = gameObject == null ? nint.Zero : (nint)gameObject->DrawObject;
+            if (currentDrawObject == nint.Zero || currentDrawObject == state.AppliedDrawObject)
+                return;
+
+            tracked = state with
+            {
+                Stage = ApplyStage.Pending,
+                AppliedDrawObject = nint.Zero,
+            };
+            SetTransition("draw_object_recreated");
+            Log.Information(
+                "Companion DrawObject recreated; reapplying configured NPC. CompanionRowId={CompanionRowId}, OldDrawObject=0x{OldDrawObject:X16}, NewDrawObject=0x{NewDrawObject:X16}.",
+                state.Mapping.SourceCompanionRowId,
+                state.AppliedDrawObject,
+                currentDrawObject);
             return;
         }
 
@@ -601,7 +713,21 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return;
         }
 
-        tracked = state with { Stage = ApplyStage.Redrawn };
+        var verifiedGameObject = (GameObject*)current.Address;
+        var appliedDrawObject = verifiedGameObject == null
+            ? nint.Zero
+            : (nint)verifiedGameObject->DrawObject;
+        if (appliedDrawObject == nint.Zero)
+        {
+            SetTransition("appearance_verify_pending");
+            return;
+        }
+
+        tracked = state with
+        {
+            Stage = ApplyStage.Redrawn,
+            AppliedDrawObject = appliedDrawObject,
+        };
         lastError = null;
         SetTransition("appearance_redrawn");
         Log.Information(
@@ -703,10 +829,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
                             : "target_ready";
 
         var localPlayerObservation = localPlayerAvailable
-            ? new LocalPlayerRuntimeObservation(
-                localPlayer!.ObjectIndex,
-                Hex(localPlayer.GameObjectId),
-                Hex(localPlayer.EntityId))
+            ? ObserveLocalPlayer(localPlayer!)
             : null;
 
         return new TargetScanResult(
@@ -715,6 +838,212 @@ public sealed unsafe class Plugin : IDalamudPlugin
             localPlayerObservation,
             selectionState,
             observations);
+    }
+
+    private void UpdateNormalSummonUnlockState()
+    {
+        var bypassCount = Interlocked.Read(ref normalSummonBypassCount);
+        if (bypassCount == normalSummonLastReportedBypassCount)
+            return;
+
+        var firstBypass = normalSummonLastReportedBypassCount == 0;
+        normalSummonLastReportedBypassCount = bypassCount;
+        if (!firstBypass)
+            return;
+
+        SetTransition("normal_summon_status_bypassed");
+        Log.Warning(
+            "Normal Companion summon status bypassed. CompanionRowId={CompanionRowId}, OriginalStatus={OriginalStatus}, BypassCount={BypassCount}.",
+            Volatile.Read(ref normalSummonLastBypassedRowId),
+            Volatile.Read(ref normalSummonLastOriginalStatus),
+            bypassCount);
+    }
+
+    private uint GetActionStatusDetour(
+        ActionManager* actionManager,
+        ActionType actionType,
+        uint actionId,
+        ulong targetId,
+        bool checkRecastActive,
+        bool checkCastingActive,
+        uint* outOptExtraInfo)
+    {
+        var originalStatus = getActionStatusHook!.Original(
+            actionManager,
+            actionType,
+            actionId,
+            targetId,
+            checkRecastActive,
+            checkCastingActive,
+            outOptExtraInfo);
+        if (Volatile.Read(ref normalSummonUnlockEnabled) != 1
+            || actionType != ActionType.Companion
+            || originalStatus != MinionHiddenActionStatus)
+        {
+            return originalStatus;
+        }
+
+        Volatile.Write(ref normalSummonLastBypassedRowId, unchecked((int)actionId));
+        Volatile.Write(ref normalSummonLastOriginalStatus, unchecked((int)originalStatus));
+        Interlocked.Exchange(ref normalSummonLastBypassedUtcTicks, DateTime.UtcNow.Ticks);
+        Interlocked.Increment(ref normalSummonBypassCount);
+        return 0;
+    }
+
+    private bool UseActionDetour(
+        ActionManager* actionManager,
+        ActionType actionType,
+        uint actionId,
+        ulong targetId,
+        uint extraParam,
+        ActionManager.UseActionMode mode,
+        uint comboRouteId,
+        bool* outOptAreaTargeted)
+    {
+        var unlockCompanionAction = Volatile.Read(ref normalSummonUnlockEnabled) == 1
+            && actionType == ActionType.Companion;
+        var originalStatus = unlockCompanionAction
+            ? getActionStatusHook!.Original(
+                actionManager,
+                actionType,
+                actionId,
+                targetId,
+                true,
+                true,
+                null)
+            : 0;
+        var originalResult = useActionHook!.Original(
+            actionManager,
+            actionType,
+            actionId,
+            targetId,
+            extraParam,
+            mode,
+            comboRouteId,
+            outOptAreaTargeted);
+        if (!unlockCompanionAction)
+        {
+            return originalResult;
+        }
+
+        Volatile.Write(ref normalSummonLastIconClickRowId, unchecked((int)actionId));
+        Interlocked.Increment(ref normalSummonIconClickCount);
+        if (originalStatus != MinionHiddenActionStatus)
+        {
+            Volatile.Write(
+                ref normalSummonLastIconClickResult,
+                originalResult ? "original_action_executed" : "original_action_rejected");
+            return originalResult;
+        }
+
+        var nativeResult = actionManager->UseActionLocation(
+            actionType,
+            actionId,
+            targetId,
+            null,
+            extraParam);
+        Volatile.Write(
+            ref normalSummonLastIconClickResult,
+            nativeResult ? "native_action_executed" : "native_action_rejected");
+        Log.Information(
+            "Companion click native action result. CompanionRowId={CompanionRowId}, OriginalStatus={OriginalStatus}, OriginalResult={OriginalResult}, UseActionLocationResult={NativeResult}.",
+            actionId,
+            originalStatus,
+            originalResult,
+            nativeResult);
+        if (nativeResult)
+            return true;
+
+        if (ObjectTable.LocalPlayer is not { } localPlayer || localPlayer.Address == nint.Zero)
+        {
+            Volatile.Write(ref normalSummonLastIconClickResult, "local_companion_unavailable");
+            return false;
+        }
+
+        try
+        {
+            var character = (Character*)localPlayer.Address;
+            var activeCompanionRowId = character->CompanionData.CompanionId;
+            var requestedCompanionRowId = activeCompanionRowId == actionId
+                ? 0u
+                : actionId;
+            character->CompanionData.SetupCompanion(
+                unchecked((short)requestedCompanionRowId),
+                1);
+
+            var result = requestedCompanionRowId == 0
+                ? "local_companion_dismiss_invoked"
+                : activeCompanionRowId == 0
+                    ? "local_companion_summon_invoked"
+                    : "local_companion_replace_invoked";
+            Volatile.Write(ref normalSummonLastIconClickResult, result);
+            Log.Information(
+                "Companion click local transition invoked. ClickedCompanionRowId={ClickedCompanionRowId}, ActiveCompanionRowId={ActiveCompanionRowId}, RequestedCompanionRowId={RequestedCompanionRowId}, TransitionParameter=1, Result={Result}.",
+                actionId,
+                activeCompanionRowId,
+                requestedCompanionRowId,
+                result);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Volatile.Write(ref normalSummonLastIconClickResult, "local_companion_invoke_failed");
+            Log.Error(
+                exception,
+                "Companion click local transition failed. CompanionRowId={CompanionRowId}.",
+                actionId);
+            return false;
+        }
+    }
+
+    private NormalCompanionSummonUnlockObservation ObserveNormalCompanionSummonUnlock()
+    {
+        var bypassCount = Interlocked.Read(ref normalSummonBypassCount);
+        var lastBypassedRowId = Volatile.Read(ref normalSummonLastBypassedRowId);
+        var lastOriginalStatus = Volatile.Read(ref normalSummonLastOriginalStatus);
+        var lastBypassedUtcTicks = Interlocked.Read(ref normalSummonLastBypassedUtcTicks);
+        var companionObserved = lastBypassedRowId > 0
+            && lastScan.Companions.Any(companion =>
+                companion.IsValid
+                && companion.IsOwnedByLocalPlayer
+                && companion.BaseId == (uint)lastBypassedRowId);
+        var hookAvailable = getActionStatusHook is not null;
+        var hookEnabled = getActionStatusHook?.IsEnabled == true;
+        var actionHookAvailable = useActionHook is not null;
+        var actionHookEnabled = useActionHook?.IsEnabled == true;
+        var iconClickCount = Interlocked.Read(ref normalSummonIconClickCount);
+        var lastIconClickRowId = Volatile.Read(ref normalSummonLastIconClickRowId);
+        var lastIconClickResult = Volatile.Read(ref normalSummonLastIconClickResult);
+        var result = !Configuration.ExperimentalEnableNormalCompanionSummon
+            ? "disabled"
+            : !hookAvailable || !actionHookAvailable
+                ? "hook_unavailable"
+                : companionObserved
+                    ? "companion_observed"
+                    : iconClickCount > 0
+                        ? lastIconClickResult ?? "icon_click_observed"
+                    : bypassCount > 0
+                        ? "status_bypassed"
+                        : "ready";
+
+        return new NormalCompanionSummonUnlockObservation(
+            Configuration.ExperimentalEnableNormalCompanionSummon,
+            hookAvailable,
+            hookEnabled,
+            actionHookAvailable,
+            actionHookEnabled,
+            "all_companion_rows",
+            bypassCount,
+            lastBypassedRowId > 0 ? unchecked((uint)lastBypassedRowId) : null,
+            lastOriginalStatus > 0 ? unchecked((uint)lastOriginalStatus) : null,
+            lastBypassedUtcTicks > 0
+                ? new DateTimeOffset(new DateTime(lastBypassedUtcTicks, DateTimeKind.Utc))
+                : null,
+            iconClickCount,
+            lastIconClickRowId > 0 ? unchecked((uint)lastIconClickRowId) : null,
+            lastIconClickResult,
+            result,
+            companionObserved);
     }
 
     private static bool IsOwnedByLocalPlayer(IGameObject candidate, IGameObject localPlayer)
@@ -750,7 +1079,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
         OwnershipObservation ownership)
     {
         int? modelCharaId = null;
-        var drawObjectPresent = false;
+        var drawObject = Hex(0);
+        var renderFlags = Hex(0);
         string? modelType = null;
 
         if (valid)
@@ -758,13 +1088,15 @@ public sealed unsafe class Plugin : IDalamudPlugin
             var character = (Character*)candidate.Address;
             var gameObject = (GameObject*)candidate.Address;
             modelCharaId = character->ModelContainer.ModelCharaId;
-            drawObjectPresent = gameObject->DrawObject != null;
+            drawObject = Hex((ulong)(nuint)gameObject->DrawObject);
+            renderFlags = Hex((ulong)gameObject->RenderFlags);
             var characterBase = gameObject->GetCharacterBase();
             modelType = characterBase == null ? null : characterBase->GetModelType().ToString();
         }
 
         return new CompanionRuntimeObservation(
             candidate.ObjectIndex,
+            Hex((ulong)(nuint)candidate.Address),
             candidate.BaseId,
             candidate.Name.ToString(),
             Hex(candidate.GameObjectId),
@@ -774,8 +1106,22 @@ public sealed unsafe class Plugin : IDalamudPlugin
             ownership.IsOwned,
             ownership.Evidence,
             modelCharaId,
-            drawObjectPresent,
+            drawObject,
+            renderFlags,
             modelType);
+    }
+
+    private static LocalPlayerRuntimeObservation ObserveLocalPlayer(IGameObject localPlayer)
+    {
+        var character = (Character*)localPlayer.Address;
+        return new LocalPlayerRuntimeObservation(
+            localPlayer.ObjectIndex,
+            Hex((ulong)(nuint)localPlayer.Address),
+            Hex(localPlayer.GameObjectId),
+            Hex(localPlayer.EntityId),
+            character->CompanionData.CompanionId,
+            Hex((ulong)(nuint)character->CompanionData.CompanionObject),
+            Hex((ulong)(nuint)character->ChildObject));
     }
 
     private static bool TryCapture(IGameObject actor, out AppearancePayload appearance)
@@ -916,8 +1262,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         var gameObject = (GameObject*)actor.Address;
         var characterBase = gameObject == null ? null : gameObject->GetCharacterBase();
-        if (characterBase != null)
+        if (characterBase != null
+            && MathF.Abs(*(float*)((byte*)characterBase + CharacterBaseModelScaleOffset) - requestedScale) >= 0.0001f)
+        {
             *(float*)((byte*)characterBase + CharacterBaseModelScaleOffset) = requestedScale;
+        }
     }
 
     private static AppearanceFinalizeResult TryFinalizeAppearance(
@@ -1041,6 +1390,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             pluginState,
             PrototypeContract.Mappings.Select(GetSelectedMapping).Select(ObserveMapping).ToArray(),
             lastScan.LocalPlayer,
+            ObserveNormalCompanionSummonUnlock(),
             lastScan.SelectionState,
             lastScan.Companions,
             tracked is null ? null : ObserveTracked(tracked.Identity, tracked.Mapping, tracked.Stage.ToString()),
@@ -1079,6 +1429,25 @@ public sealed unsafe class Plugin : IDalamudPlugin
             mapping.TargetModelCharaRowId,
             stage);
 
+    private delegate uint GetActionStatusDelegate(
+        ActionManager* actionManager,
+        ActionType actionType,
+        uint actionId,
+        ulong targetId,
+        bool checkRecastActive,
+        bool checkCastingActive,
+        uint* outOptExtraInfo);
+
+    private delegate bool UseActionDelegate(
+        ActionManager* actionManager,
+        ActionType actionType,
+        uint actionId,
+        ulong targetId,
+        uint extraParam,
+        ActionManager.UseActionMode mode,
+        uint comboRouteId,
+        bool* outOptAreaTargeted);
+
     private enum ApplyStage
     {
         Pending,
@@ -1087,15 +1456,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         HiddenBackingWritten,
         Enabled,
         Verify,
-        GlamourerReleased,
         Redrawn,
-    }
-
-    private enum GlamourerReleaseResult
-    {
-        NotRequired,
-        Released,
-        Failed,
     }
 
     private enum AppearanceFinalizeResult
@@ -1126,7 +1487,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
         AppearancePayload Original,
         float? OriginalModelScale,
         PrototypeMapping Mapping,
-        ApplyStage Stage);
+        ApplyStage Stage,
+        nint AppliedDrawObject);
 
     private sealed record FailedActorState(
         ActorIdentity Identity,

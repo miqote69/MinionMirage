@@ -2,7 +2,7 @@ using Dalamud.Game;
 using Dalamud.Plugin.Services;
 using System.Globalization;
 
-namespace MinionToNPC.Localization;
+namespace MinionMirage.Localization;
 
 public sealed class Localizer(Configuration configuration, IClientState clientState)
 {
@@ -50,6 +50,9 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
             [UiTextKey.French] = "French",
             [UiTextKey.Settings] = "Settings",
             [UiTextKey.UiLanguage] = "UI language",
+            [UiTextKey.Experimental] = "Experimental",
+            [UiTextKey.EnableMinionSummonExperiment] = "Enable minion summon (experimental)",
+            [UiTextKey.EnableMinionSummonExperimentHelp] = "Enables every game minion icon and normal summon in prohibited areas. This may crash the game.",
             [UiTextKey.Search] = "Search minions or NPCs",
             [UiTextKey.All] = "All",
             [UiTextKey.Human] = "Human",
@@ -67,6 +70,7 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
             [UiTextKey.DisableAll] = "Disable all",
             [UiTextKey.Enabled] = "Enabled",
             [UiTextKey.Disabled] = "Disabled",
+            [UiTextKey.NotOwned] = "Not owned",
         };
 
     private static readonly IReadOnlyDictionary<UiLanguage, IReadOnlyDictionary<UiTextKey, string>> Strings =
@@ -82,6 +86,9 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
                 [UiTextKey.French] = "フランス語",
                 [UiTextKey.Settings] = "設定",
                 [UiTextKey.UiLanguage] = "UI言語",
+                [UiTextKey.Experimental] = "実験的機能",
+                [UiTextKey.EnableMinionSummonExperiment] = "ミニオン召喚を有効化（実験）",
+                [UiTextKey.EnableMinionSummonExperimentHelp] = "召喚禁止エリアで全ミニオンのゲーム内アイコンと通常召喚を有効化します。ゲームがクラッシュする可能性があります。",
                 [UiTextKey.Search] = "ミニオン名・NPC名で検索",
                 [UiTextKey.All] = "すべて",
                 [UiTextKey.Human] = "ヒューマン",
@@ -99,6 +106,7 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
                 [UiTextKey.DisableAll] = "一括OFF",
                 [UiTextKey.Enabled] = "有効",
                 [UiTextKey.Disabled] = "無効",
+                [UiTextKey.NotOwned] = "未所持",
             }),
             [UiLanguage.German] = Translate(new Dictionary<UiTextKey, string>
             {
@@ -109,6 +117,9 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
                 [UiTextKey.French] = "Französisch",
                 [UiTextKey.Settings] = "Einstellungen",
                 [UiTextKey.UiLanguage] = "UI-Sprache",
+                [UiTextKey.Experimental] = "Experimentell",
+                [UiTextKey.EnableMinionSummonExperiment] = "Begleiterbeschwörung aktivieren (experimentell)",
+                [UiTextKey.EnableMinionSummonExperimentHelp] = "Aktiviert alle Begleitersymbole und die normale Beschwörung in gesperrten Bereichen. Das Spiel kann abstürzen.",
                 [UiTextKey.Search] = "Begleiter oder NPC suchen",
                 [UiTextKey.All] = "Alle",
                 [UiTextKey.Human] = "Humanoid",
@@ -126,6 +137,7 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
                 [UiTextKey.DisableAll] = "Alle deaktivieren",
                 [UiTextKey.Enabled] = "Aktiviert",
                 [UiTextKey.Disabled] = "Deaktiviert",
+                [UiTextKey.NotOwned] = "Nicht im Besitz",
             }),
             [UiLanguage.French] = Translate(new Dictionary<UiTextKey, string>
             {
@@ -136,6 +148,9 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
                 [UiTextKey.French] = "Français",
                 [UiTextKey.Settings] = "Paramètres",
                 [UiTextKey.UiLanguage] = "Langue de l'interface",
+                [UiTextKey.Experimental] = "Expérimental",
+                [UiTextKey.EnableMinionSummonExperiment] = "Activer l'invocation de mascotte (expérimental)",
+                [UiTextKey.EnableMinionSummonExperimentHelp] = "Active toutes les icônes de mascotte et l'invocation normale dans les zones interdites. Le jeu peut planter.",
                 [UiTextKey.Search] = "Rechercher une mascotte ou un PNJ",
                 [UiTextKey.All] = "Tout",
                 [UiTextKey.Human] = "Humanoïde",
@@ -153,6 +168,7 @@ public sealed class Localizer(Configuration configuration, IClientState clientSt
                 [UiTextKey.DisableAll] = "Tout désactiver",
                 [UiTextKey.Enabled] = "Activé",
                 [UiTextKey.Disabled] = "Désactivé",
+                [UiTextKey.NotOwned] = "Non obtenue",
             }),
         };
 

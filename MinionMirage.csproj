@@ -1,5 +1,7 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
+    <AssemblyName>MinionMirage</AssemblyName>
+    <RootNamespace>MinionMirage</RootNamespace>
     <Version>0.0.0.1</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IsPackable>false</IsPackable>

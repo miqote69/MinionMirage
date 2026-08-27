@@ -1,0 +1,12 @@
+{
+  "Author": "miqote69",
+  "Name": "Minion Mirage",
+  "Punchline": "Transform your minions into familiar NPCs.",
+  "Description": "Transforms selected minions into configurable NPC appearances.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "minion",
+    "npc",
+    "cosmetic"
+  ]
+}

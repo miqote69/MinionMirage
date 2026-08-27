@@ -1,4 +1,4 @@
-namespace MinionToNPC;
+namespace MinionMirage;
 
 internal static class PrototypeContract
 {
@@ -87,7 +87,7 @@ internal static class PrototypeContract
         TargetModelCharaRowId: 2520,
         TargetName: "アン＝ラド",
         IsHuman: false,
-        TargetModelScale: 1.0f,
+        TargetModelScale: 0.62f,
         AppearanceCategory: PrototypeAppearanceCategory.DemiHuman);
 
     private static readonly PrototypeMapping WindUpPixieOptionC = new(
@@ -98,7 +98,7 @@ internal static class PrototypeContract
         TargetModelCharaRowId: 2520,
         TargetName: "ティル＝ベーク",
         IsHuman: false,
-        TargetModelScale: 1.0f,
+        TargetModelScale: 0.62f,
         AppearanceCategory: PrototypeAppearanceCategory.DemiHuman);
 
     public static IReadOnlyList<PrototypeMapping> Mappings { get; } =
@@ -121,7 +121,7 @@ internal static class PrototypeContract
             TargetModelCharaRowId: 1689,
             TargetName: "Scathach",
             IsHuman: false,
-            TargetModelScale: null,
+            TargetModelScale: 0.5f,
             AppearanceCategory: PrototypeAppearanceCategory.Monster),
         new(
             SourceCompanionRowId: 218,
@@ -241,7 +241,7 @@ internal static class PrototypeContract
             TargetModelCharaRowId: 2520,
             TargetName: "ウィンニミイ",
             IsHuman: false,
-            TargetModelScale: 1.0f,
+            TargetModelScale: 0.62f,
             AppearanceCategory: PrototypeAppearanceCategory.DemiHuman),
         new(
             SourceCompanionRowId: 293,
@@ -290,6 +290,36 @@ internal static class PrototypeContract
             TargetRowId: 1026816,
             TargetModelCharaRowId: 0,
             TargetName: "Kan-E-Senna",
+            IsHuman: true,
+            TargetModelScale: null,
+            AppearanceCategory: PrototypeAppearanceCategory.Human),
+        new(
+            SourceCompanionRowId: 145,
+            SourceName: "Ysayle",
+            TargetKind: PrototypeTargetKind.EventNpc,
+            TargetRowId: 1014847,
+            TargetModelCharaRowId: 0,
+            TargetName: "Ysayle",
+            IsHuman: true,
+            TargetModelScale: null,
+            AppearanceCategory: PrototypeAppearanceCategory.Human),
+        new(
+            SourceCompanionRowId: 286,
+            SourceName: "Mithra",
+            TargetKind: PrototypeTargetKind.EventNpc,
+            TargetRowId: 1051960,
+            TargetModelCharaRowId: 0,
+            TargetName: "Mithran Adventurer",
+            IsHuman: true,
+            TargetModelScale: null,
+            AppearanceCategory: PrototypeAppearanceCategory.Human),
+        new(
+            SourceCompanionRowId: 248,
+            SourceName: "Lyse",
+            TargetKind: PrototypeTargetKind.EventNpc,
+            TargetRowId: 1038813,
+            TargetModelCharaRowId: 0,
+            TargetName: "Lyse",
             IsHuman: true,
             TargetModelScale: null,
             AppearanceCategory: PrototypeAppearanceCategory.Human),

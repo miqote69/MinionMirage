@@ -1,4 +1,4 @@
-namespace MinionToNPC;
+namespace MinionMirage;
 
 internal sealed record AppearancePayload(
     uint ModelCharaId,

@@ -1,7 +1,7 @@
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 
-namespace MinionToNPC;
+namespace MinionMirage;
 
 internal static class TargetAppearanceResolver
 {

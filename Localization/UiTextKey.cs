@@ -1,4 +1,4 @@
-namespace MinionToNPC.Localization;
+namespace MinionMirage.Localization;
 
 public enum UiTextKey
 {
@@ -9,6 +9,9 @@ public enum UiTextKey
     French,
     Settings,
     UiLanguage,
+    Experimental,
+    EnableMinionSummonExperiment,
+    EnableMinionSummonExperimentHelp,
     Search,
     All,
     Human,
@@ -26,4 +29,5 @@ public enum UiTextKey
     DisableAll,
     Enabled,
     Disabled,
+    NotOwned,
 }

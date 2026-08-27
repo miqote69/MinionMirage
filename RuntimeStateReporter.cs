@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Dalamud.Plugin.Services;
 
-namespace MinionToNPC;
+namespace MinionMirage;
 
 internal sealed record RuntimeStateSnapshot(
     int SchemaVersion,
@@ -11,6 +11,7 @@ internal sealed record RuntimeStateSnapshot(
     string PluginState,
     IReadOnlyList<RuntimeMappingObservation> Mappings,
     LocalPlayerRuntimeObservation? LocalPlayer,
+    NormalCompanionSummonUnlockObservation NormalCompanionSummonUnlock,
     string SelectionState,
     IReadOnlyList<CompanionRuntimeObservation> Companions,
     TrackedRuntimeObservation? Tracked,
@@ -21,11 +22,33 @@ internal sealed record RuntimeStateSnapshot(
 
 internal sealed record LocalPlayerRuntimeObservation(
     ushort ObjectIndex,
+    string Address,
     string GameObjectId,
-    string EntityId);
+    string EntityId,
+    ushort CompanionId,
+    string CompanionObject,
+    string ChildObject);
+
+internal sealed record NormalCompanionSummonUnlockObservation(
+    bool ConfiguredEnabled,
+    bool StatusHookAvailable,
+    bool StatusHookEnabled,
+    bool ActionHookAvailable,
+    bool ActionHookEnabled,
+    string Scope,
+    long BypassCount,
+    uint? LastBypassedCompanionRowId,
+    uint? LastOriginalStatus,
+    DateTimeOffset? LastBypassedAtUtc,
+    long IconClickCount,
+    uint? LastIconClickCompanionRowId,
+    string? LastIconClickResult,
+    string Result,
+    bool CompanionObserved);
 
 internal sealed record CompanionRuntimeObservation(
     ushort ObjectIndex,
+    string Address,
     uint BaseId,
     string Name,
     string GameObjectId,
@@ -35,7 +58,8 @@ internal sealed record CompanionRuntimeObservation(
     bool IsOwnedByLocalPlayer,
     string OwnershipEvidence,
     int? ModelCharaId,
-    bool DrawObjectPresent,
+    string DrawObject,
+    string RenderFlags,
     string? ModelType);
 
 internal sealed record TrackedRuntimeObservation(
@@ -60,7 +84,7 @@ internal sealed record RuntimeMappingObservation(
 
 internal sealed class RuntimeStateReporter
 {
-    internal const int CurrentSchemaVersion = 2;
+    internal const int CurrentSchemaVersion = 9;
     internal const string FileName = "runtime-state.json";
 
     private static readonly UTF8Encoding Utf8NoBom = new(false);
@@ -117,7 +141,7 @@ internal sealed class RuntimeStateReporter
                 return;
 
             failureReported = true;
-            log.Error(exception, "MinionToNPC runtime state reporting is unavailable.");
+            log.Error(exception, "Minion Mirage runtime state reporting is unavailable.");
         }
     }
 

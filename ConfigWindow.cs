@@ -1,18 +1,20 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
-using MinionToNPC.Localization;
+using MinionMirage.Localization;
 using System.Numerics;
 
-namespace MinionToNPC;
+namespace MinionMirage;
 
 public sealed class ConfigWindow : Window, IDisposable
 {
     private static readonly Vector2 CardIconSize = new(48.0f, 48.0f);
     private static readonly Vector2 ListIconSize = new(36.0f, 36.0f);
     private static readonly Vector4 CardBackground = new(0.055f, 0.065f, 0.105f, 0.92f);
+    private static readonly Vector4 UnownedCardBackground = new(0.065f, 0.068f, 0.078f, 0.88f);
     private static readonly Vector4 CardBorder = new(0.20f, 0.23f, 0.34f, 0.95f);
     private static readonly Vector4 MutedText = new(0.58f, 0.62f, 0.72f, 1.0f);
+    private static readonly Vector4 UnownedAccent = new(0.43f, 0.45f, 0.50f, 1.0f);
     private static readonly Vector4 EnabledText = new(0.31f, 0.91f, 0.67f, 1.0f);
 
     private readonly Plugin plugin;
@@ -21,7 +23,7 @@ public sealed class ConfigWindow : Window, IDisposable
     private MappingView selectedView = MappingView.Cards;
 
     public ConfigWindow(Plugin plugin)
-        : base($"{Plugin.DisplayName} v{Plugin.DisplayVersion}###MinionToNPCConfig")
+        : base($"{Plugin.DisplayName} v{Plugin.DisplayVersion}###MinionMirageConfig")
     {
         this.plugin = plugin;
         Flags |= ImGuiWindowFlags.MenuBar;
@@ -41,6 +43,8 @@ public sealed class ConfigWindow : Window, IDisposable
         DrawMenuBar();
 
         var mappings = PrototypeContract.Mappings
+            .OrderBy(plugin.GetCompanionOrder)
+            .ThenBy(mapping => mapping.SourceCompanionRowId)
             .Where(MatchesFilter)
             .Where(MatchesSearch)
             .ToArray();
@@ -50,6 +54,7 @@ public sealed class ConfigWindow : Window, IDisposable
         DrawSearch(activeCount);
         DrawToolbar(mappings.Length);
         DrawCategoryFilters();
+        DrawExperimentalControls();
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
@@ -94,6 +99,37 @@ public sealed class ConfigWindow : Window, IDisposable
         }
 
         ImGui.EndMenuBar();
+    }
+
+    private void DrawExperimentalControls()
+    {
+        ImGui.Spacing();
+        ImGui.TextColored(
+            new Vector4(0.94f, 0.48f, 0.24f, 1.0f),
+            plugin.Localizer.Get(UiTextKey.Experimental));
+        ImGui.Separator();
+
+        const ImGuiTableFlags flags = ImGuiTableFlags.SizingStretchProp;
+        if (ImGui.BeginTable("##experimental-normal-summon", 2, flags))
+        {
+            ImGui.TableSetupColumn("##normal-summon-label", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("##normal-summon-toggle", ImGuiTableColumnFlags.WidthFixed, 52.0f);
+            ImGui.TableNextRow();
+            ImGui.TableSetColumnIndex(0);
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(plugin.Localizer.Get(UiTextKey.EnableMinionSummonExperiment));
+
+            ImGui.TableSetColumnIndex(1);
+            var enabled = plugin.Configuration.ExperimentalEnableNormalCompanionSummon;
+            if (DrawToggle("##normal-summon-enabled", ref enabled, new Vector4(0.94f, 0.48f, 0.24f, 1.0f)))
+                plugin.SetExperimentalEnableNormalCompanionSummon(enabled);
+
+            ImGui.EndTable();
+        }
+
+        ImGui.SetWindowFontScale(0.86f);
+        ImGui.TextWrapped(plugin.Localizer.Get(UiTextKey.EnableMinionSummonExperimentHelp));
+        ImGui.SetWindowFontScale(1.0f);
     }
 
     private void DrawSearch(int activeCount)
@@ -225,9 +261,10 @@ public sealed class ConfigWindow : Window, IDisposable
     {
         var selectedMapping = plugin.GetSelectedMapping(mapping);
         var group = GetMappingGroup(selectedMapping);
-        var accent = GetAccentColor(group);
+        var isUnlocked = plugin.IsCompanionUnlocked(mapping.SourceCompanionRowId);
+        var accent = isUnlocked ? GetAccentColor(group) : UnownedAccent;
         ImGui.PushID(checked((int)mapping.SourceCompanionRowId));
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, CardBackground);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, isUnlocked ? CardBackground : UnownedCardBackground);
         ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Lerp(CardBorder, accent, 0.32f));
         ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 10.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(12.0f, 11.0f));
@@ -237,18 +274,31 @@ public sealed class ConfigWindow : Window, IDisposable
             var contentStart = ImGui.GetCursorPos();
             var contentWidth = ImGui.GetContentRegionAvail().X;
             var toggleWidth = ImGui.GetFrameHeight() * 1.85f;
-            DrawIcon(mapping, CardIconSize);
+            DrawIcon(mapping, CardIconSize, isUnlocked);
             ImGui.SameLine();
             ImGui.BeginGroup();
-            ImGui.TextUnformatted(plugin.GetCompanionName(mapping));
+            if (isUnlocked)
+                ImGui.TextUnformatted(plugin.GetCompanionName(mapping));
+            else
+                ImGui.TextDisabled(plugin.GetCompanionName(mapping));
+
+            ImGui.BeginDisabled(!isUnlocked);
             DrawTargetSelection(mapping, selectedMapping, 150.0f);
+            ImGui.EndDisabled();
             DrawGroup(group, accent);
+            if (!isUnlocked)
+            {
+                ImGui.SameLine(0, 6.0f);
+                ImGui.TextDisabled($"· {plugin.Localizer.Get(UiTextKey.NotOwned)}");
+            }
             ImGui.EndGroup();
 
             ImGui.SetCursorPos(new Vector2(
                 contentStart.X + contentWidth - toggleWidth,
                 contentStart.Y));
+            ImGui.BeginDisabled(!isUnlocked);
             DrawMappingToggle(mapping, accent);
+            ImGui.EndDisabled();
         }
 
         ImGui.EndChild();
@@ -274,23 +324,32 @@ public sealed class ConfigWindow : Window, IDisposable
         {
             var selectedMapping = plugin.GetSelectedMapping(mapping);
             var group = GetMappingGroup(selectedMapping);
-            var accent = GetAccentColor(group);
+            var isUnlocked = plugin.IsCompanionUnlocked(mapping.SourceCompanionRowId);
+            var accent = isUnlocked ? GetAccentColor(group) : UnownedAccent;
             ImGui.PushID(checked((int)mapping.SourceCompanionRowId));
             ImGui.TableNextRow(ImGuiTableRowFlags.None, 48.0f);
 
             ImGui.TableSetColumnIndex(0);
-            DrawIcon(mapping, ListIconSize);
+            DrawIcon(mapping, ListIconSize, isUnlocked);
 
             ImGui.TableSetColumnIndex(1);
-            ImGui.TextUnformatted(plugin.GetCompanionName(mapping));
+            if (isUnlocked)
+                ImGui.TextUnformatted(plugin.GetCompanionName(mapping));
+            else
+                ImGui.TextDisabled($"{plugin.GetCompanionName(mapping)}  [{plugin.Localizer.Get(UiTextKey.NotOwned)}]");
+
+            ImGui.BeginDisabled(!isUnlocked);
             DrawTargetSelection(mapping, selectedMapping, 180.0f);
+            ImGui.EndDisabled();
 
             ImGui.TableSetColumnIndex(2);
             ImGui.AlignTextToFramePadding();
             DrawGroup(group, accent);
 
             ImGui.TableSetColumnIndex(3);
+            ImGui.BeginDisabled(!isUnlocked);
             DrawMappingToggle(mapping, accent);
+            ImGui.EndDisabled();
 
             ImGui.PopID();
         }
@@ -298,12 +357,18 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.EndTable();
     }
 
-    private void DrawIcon(PrototypeMapping mapping, Vector2 size)
+    private void DrawIcon(PrototypeMapping mapping, Vector2 size, bool isUnlocked)
     {
+        if (!isUnlocked)
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * 0.42f);
+
         if (plugin.TryGetCompanionIcon(mapping.SourceCompanionRowId, out var icon))
             ImGui.Image(icon!.Handle, size);
         else
             ImGui.Dummy(size);
+
+        if (!isUnlocked)
+            ImGui.PopStyleVar();
     }
 
     private void DrawTargetSelection(
