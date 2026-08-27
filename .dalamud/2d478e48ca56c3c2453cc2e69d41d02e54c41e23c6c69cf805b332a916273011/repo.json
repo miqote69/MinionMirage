@@ -4,7 +4,7 @@
     "Name": "Minion Mirage",
     "Description": "Replaces selected minions with NPCs.\nCommand: /minionmirage",
     "InternalName": "MinionMirage",
-    "AssemblyVersion": "0.1.0.4",
+    "AssemblyVersion": "0.1.0.5",
     "TestingAssemblyVersion": null,
     "RepoUrl": "https://github.com/miqote69/MinionMirage",
     "ApplicableVersion": "any",
@@ -20,9 +20,9 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "IconUrl": "https://raw.githubusercontent.com/miqote69/MinionMirage-Distribution/main/.dalamud/2d478e48ca56c3c2453cc2e69d41d02e54c41e23c6c69cf805b332a916273011/icon.png",
-    "DownloadLinkInstall": "https://downloads.miqote69.com/minion-mirage/v0.1.0-beta.5/install",
-    "DownloadLinkTesting": "https://downloads.miqote69.com/minion-mirage/v0.1.0-beta.5/testing",
-    "DownloadLinkUpdate": "https://downloads.miqote69.com/minion-mirage/v0.1.0-beta.5/update",
-    "LastUpdate": 1787847163
+    "DownloadLinkInstall": "https://downloads.miqote69.com/minion-mirage/v0.1.0-beta.6/install",
+    "DownloadLinkTesting": "https://downloads.miqote69.com/minion-mirage/v0.1.0-beta.6/testing",
+    "DownloadLinkUpdate": "https://downloads.miqote69.com/minion-mirage/v0.1.0-beta.6/update",
+    "LastUpdate": 1787847425
   }
 ]

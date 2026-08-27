@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Game.Command;
 using Dalamud.Hooking;
 using Dalamud.IoC;
 using Dalamud.Interface.Textures;
@@ -23,6 +24,7 @@ namespace MinionMirage;
 public sealed unsafe class Plugin : IDalamudPlugin
 {
     public const string DisplayName = "Minion Mirage";
+    private const string ConfigCommand = "/minionmirage";
     private const int CharacterBaseModelScaleOffset = 0x2A4;
     private const uint MinionHiddenActionStatus = 1325;
 
@@ -32,6 +34,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     [PluginService] private static IClientState ClientState { get; set; } = null!;
     [PluginService] private static ITextureProvider TextureProvider { get; set; } = null!;
     [PluginService] private static IGameInteropProvider GameInteropProvider { get; set; } = null!;
+    [PluginService] private static ICommandManager CommandManager { get; set; } = null!;
     [PluginService] private static IPluginLog Log { get; set; } = null!;
 
     private readonly IDalamudPluginInterface pluginInterface;
@@ -154,6 +157,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
             }
             Log.Error(exception, "Normal Companion summon unlock hook is unavailable.");
         }
+        CommandManager.AddHandler(
+            ConfigCommand,
+            new CommandInfo(OnConfigCommand)
+            {
+                HelpMessage = "Open Minion Mirage settings.",
+            });
         Framework.Update += OnFrameworkUpdate;
 
         Log.Information(
@@ -170,6 +179,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         disposed = true;
         Framework.Update -= OnFrameworkUpdate;
+        CommandManager.RemoveHandler(ConfigCommand);
         pluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         pluginInterface.UiBuilder.Draw -= windowSystem.Draw;
         Volatile.Write(ref normalSummonUnlockEnabled, 0);
@@ -381,6 +391,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private void ToggleConfigUi()
         => configWindow.Toggle();
+
+    private void OnConfigCommand(string command, string arguments)
+        => configWindow.IsOpen = true;
 
     private bool NormalizeConfiguration()
     {
