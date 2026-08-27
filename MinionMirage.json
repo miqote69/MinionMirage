@@ -2,7 +2,7 @@
   "Author": "miqote69",
   "Name": "Minion Mirage",
   "Punchline": "Transform your minions into familiar NPCs.",
-  "Description": "Replaces selected minions with NPCs.",
+  "Description": "Replaces selected minions with NPCs.\nCommand: /minionmirage",
   "IconUrl": "https://raw.githubusercontent.com/miqote69/MinionMirage-Distribution/main/.dalamud/2d478e48ca56c3c2453cc2e69d41d02e54c41e23c6c69cf805b332a916273011/icon.png",
   "ApplicableVersion": "any",
   "Tags": [
