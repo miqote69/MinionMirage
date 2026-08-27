@@ -5,7 +5,7 @@ Minion Mirage is a standalone Dalamud plugin that replaces supported minions sum
 It preserves the game's Companion actor, follow behavior, summon, replacement, and dismissal lifecycle while changing only the client-side appearance. It does not require or inspect Penumbra, Glamourer, or another appearance plugin.
 
 > [!CAUTION]
-> Minion Mirage `0.1.0-beta.1` is an early beta and remains under active development. Native appearance redraws and the experimental summon feature may cause incorrect actor states or crash the game. Use the plugin at your own risk.
+> Minion Mirage `0.1.0-beta.6` is an early beta and remains under active development. Native appearance redraws and the experimental summon feature may cause incorrect actor states or crash the game. Use the plugin at your own risk.
 
 ## Install for beta testing
 
@@ -16,6 +16,14 @@ https://raw.githubusercontent.com/miqote69/MinionMirage-Distribution/main/.dalam
 ```
 
 The URL is intentionally difficult to guess, but it is not an authentication mechanism. Anyone who receives the URL can use it.
+
+## Open settings
+
+Run the following command in the in-game chat:
+
+```text
+/minionmirage
+```
 
 ## Features
 

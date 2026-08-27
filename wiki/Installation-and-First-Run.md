@@ -1,6 +1,18 @@
 # Installation and First Run
 
-Minion Mirage is currently a private beta and is loaded as a Dalamud Dev Plugin.
+Minion Mirage is currently distributed as a beta through a Dalamud custom plugin repository.
+
+## Install the beta
+
+Add the following URL to **Dalamud Settings → Experimental → Custom Plugin Repositories**:
+
+```text
+https://raw.githubusercontent.com/miqote69/MinionMirage-Distribution/main/.dalamud/2d478e48ca56c3c2453cc2e69d41d02e54c41e23c6c69cf805b332a916273011/repo.json
+```
+
+Open the Dalamud Plugin Installer, install **Minion Mirage**, and use `/minionmirage` in the in-game chat to open its settings.
+
+## Development build
 
 ## Requirements
 
@@ -23,7 +35,7 @@ The development DLL is created at:
 bin/Release/MinionMirage.dll
 ```
 
-## Register the Dev Plugin
+### Register the Dev Plugin
 
 1. Open Dalamud Settings.
 2. Open the Dev Plugins page.
@@ -43,4 +55,4 @@ Do not enable **Enable minion summon (experimental)** until you have read [Safet
 
 ## Updating
 
-Build the new commit in Release configuration and replace the Dev Plugin DLL. Configuration language, mapping ON/OFF state, selected targets, and the experimental switch are stored in the normal Dalamud plugin configuration.
+Normal installations update through the Dalamud Plugin Installer. Development installations rebuild the current commit in Release configuration and reload `bin/Release/MinionMirage.dll`. Configuration language, mapping ON/OFF state, selected targets, and the experimental switch are stored in the normal Dalamud plugin configuration.

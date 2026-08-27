@@ -14,7 +14,7 @@ The current character has not unlocked that minion. The mapping remains visible 
 
 ## Can I add my own minion or NPC mapping?
 
-Not in `0.1.0-beta.1`. Mappings are currently fixed in the plugin source.
+Not in the current beta. Mappings are currently fixed in the plugin source.
 
 ## Why do some minions have a target selector?
 

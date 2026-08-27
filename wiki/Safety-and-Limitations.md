@@ -1,6 +1,6 @@
 # Safety and Limitations
 
-> **Early beta:** Minion Mirage `0.1.0-beta.1` changes native actor appearance backing and redraw state. The experimental summon feature also intercepts native minion actions. Game crashes and incorrect transient actor states cannot be ruled out.
+> **Early beta:** Minion Mirage `0.1.0-beta.6` changes native actor appearance backing and redraw state. The experimental summon feature also intercepts native minion actions. Game crashes and incorrect transient actor states cannot be ruled out.
 
 ## Safety boundaries
 
@@ -26,4 +26,4 @@
 
 ## Experimental summon guidance
 
-Enable the experimental switch only when you specifically need to test minions in an area where the game normally prohibits them. Turn it off when the test is finished. If summon, replacement, or dismissal behavior becomes abnormal, disable the switch and reload the Dev Plugin before continuing.
+Enable the experimental switch only when you specifically need to test minions in an area where the game normally prohibits them. Turn it off when the test is finished. If summon, replacement, or dismissal behavior becomes abnormal, disable the switch and reload Minion Mirage before continuing.

@@ -4,7 +4,7 @@ Minion Mirage is an early-beta Dalamud plugin that replaces supported minions su
 
 It is standalone and does not require or inspect Penumbra, Glamourer, or another appearance plugin. The game keeps ownership of the Companion actor and its normal summon, follow, replacement, and dismissal lifecycle.
 
-> **Important:** Minion Mirage `0.1.0-beta.1` performs native appearance redraws. The experimental summon feature also uses native game action and Companion transition paths. Incorrect actor states or game crashes cannot be ruled out.
+> **Important:** Minion Mirage `0.1.0-beta.6` performs native appearance redraws. The experimental summon feature also uses native game action and Companion transition paths. Incorrect actor states or game crashes cannot be ruled out.
 
 ## Start Here
 
@@ -22,9 +22,10 @@ It is standalone and does not require or inspect Penumbra, Glamourer, or another
 
 ## Current beta status
 
-- Version: `0.1.0-beta.1`
-- Distribution: private beta; no public custom-repository feed
-- Supported source minions: 22
+- Version: `0.1.0-beta.6`
+- Distribution: beta through the public Minion Mirage distribution feed
+- Settings command: `/minionmirage`
+- Supported source minions: 23
 - Appearance categories: Human, Young Human, DemiHuman, Monster
 - GPose: selected NPC appearance is reapplied to the resolved visible Companion representation
 - UI languages: Automatic, English, Japanese, German, French
