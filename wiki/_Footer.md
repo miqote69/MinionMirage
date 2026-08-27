@@ -1,1 +1,0 @@
-[Repository](https://github.com/miqote69/MinionMirage) | [README](../README.md) | [Frequently Asked Questions](Frequently-Asked-Questions.md) | [Troubleshooting and Bug Reports](Troubleshooting-and-Bug-Reports.md)
