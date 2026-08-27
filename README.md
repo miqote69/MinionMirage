@@ -67,7 +67,7 @@ While loaded, the plugin atomically updates `runtime-state.json` in its Dalamud 
 
 ## Documentation
 
-- [Project Wiki](https://github.com/miqote69/MinionMirage/wiki)
+- [Documentation Wiki](wiki/Home.md)
 - [Feature Guide](wiki/Feature-Guide.md)
 - [Safety and Limitations](wiki/Safety-and-Limitations.md)
 - [Troubleshooting and Bug Reports](wiki/Troubleshooting-and-Bug-Reports.md)

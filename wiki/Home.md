@@ -8,16 +8,16 @@ It is standalone and does not require or inspect Penumbra, Glamourer, or another
 
 ## Start Here
 
-- [Installation and First Run](Installation-and-First-Run)
-- [Feature Guide](Feature-Guide)
-- [Safety and Limitations](Safety-and-Limitations)
-- [Frequently Asked Questions](Frequently-Asked-Questions)
-- [Troubleshooting and Bug Reports](Troubleshooting-and-Bug-Reports)
+- [Installation and First Run](Installation-and-First-Run.md)
+- [Feature Guide](Feature-Guide.md)
+- [Safety and Limitations](Safety-and-Limitations.md)
+- [Frequently Asked Questions](Frequently-Asked-Questions.md)
+- [Troubleshooting and Bug Reports](Troubleshooting-and-Bug-Reports.md)
 
 ## Quick Links
 
 - [Repository](https://github.com/miqote69/MinionMirage)
-- [README](https://github.com/miqote69/MinionMirage/blob/main/README.md)
+- [README](../README.md)
 - [Issues](https://github.com/miqote69/MinionMirage/issues)
 
 ## Current beta status

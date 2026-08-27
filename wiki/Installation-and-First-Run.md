@@ -39,7 +39,7 @@ bin/Release/MinionMirage.dll
 4. Confirm that its configured NPC appearance is applied after the native summon transition.
 5. Use the mapping switch to disable or re-enable an individual appearance.
 
-Do not enable **Enable minion summon (experimental)** until you have read [Safety and Limitations](Safety-and-Limitations).
+Do not enable **Enable minion summon (experimental)** until you have read [Safety and Limitations](Safety-and-Limitations.md).
 
 ## Updating
 
