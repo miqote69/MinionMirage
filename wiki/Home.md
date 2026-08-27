@@ -26,4 +26,5 @@ It is standalone and does not require or inspect Penumbra, Glamourer, or another
 - Distribution: private beta; no public custom-repository feed
 - Supported source minions: 22
 - Appearance categories: Human, Young Human, DemiHuman, Monster
+- GPose: selected NPC appearance is reapplied to the resolved visible Companion representation
 - UI languages: Automatic, English, Japanese, German, French

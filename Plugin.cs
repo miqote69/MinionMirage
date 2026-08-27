@@ -45,6 +45,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private readonly WindowSystem windowSystem = new("MinionMirage");
     private TrackedActor? tracked;
     private FailedActorState? failedActor;
+    private GPoseRepresentationState? gposeRepresentation;
+    private bool wasGPosing;
+    private string gposeStatus = "outside";
     private TargetScanResult lastScan = TargetScanResult.NotStarted;
     private string lastTransition = "loaded";
     private DateTimeOffset lastTransitionAtUtc = DateTimeOffset.UtcNow;
@@ -448,19 +451,251 @@ public sealed unsafe class Plugin : IDalamudPlugin
         {
             lastScan = ScanTargets();
             UpdateNormalSummonUnlockState();
-            UpdateTarget(lastScan.Candidate, lastScan.Mapping);
+            if (ClientState.IsGPosing)
+                UpdateGPoseRepresentation(lastScan);
+            else
+            {
+                UpdateGPoseRepresentation(lastScan);
+                UpdateTarget(lastScan.Candidate, lastScan.Mapping);
+            }
         }
         catch (Exception exception)
         {
             Log.Error(exception, "Minion Mirage update failed; stopping writes for the current actor.");
             lastError = exception.Message;
             SetTransition("update_failed");
-            FailCurrentActor();
+            if (ClientState.IsGPosing)
+                gposeRepresentation = null;
+            else
+                FailCurrentActor();
         }
         finally
         {
             PublishRuntimeState(lastError is null ? "running" : "error");
         }
+    }
+
+    private void UpdateGPoseRepresentation(TargetScanResult normalScan)
+    {
+        if (!ClientState.IsGPosing)
+        {
+            if (wasGPosing)
+                Log.Information("GPose exited; released GPose-only Companion representation tracking.");
+
+            wasGPosing = false;
+            gposeRepresentation = null;
+            SetGPoseStatus("outside");
+            return;
+        }
+
+        if (!wasGPosing)
+        {
+            wasGPosing = true;
+            gposeRepresentation = null;
+            Log.Information("GPose entered; waiting for the visible Companion representation.");
+        }
+
+        ActorIdentity? sourceIdentity = tracked?.Identity ?? gposeRepresentation?.SourceIdentity;
+        uint? sourceCompanionRowId = tracked?.Mapping.SourceCompanionRowId
+            ?? gposeRepresentation?.SourceCompanionRowId;
+        if (sourceIdentity is null && normalScan.Candidate is { } observedSource)
+            sourceIdentity = ActorIdentity.From(observedSource);
+        sourceCompanionRowId ??= normalScan.Mapping?.SourceCompanionRowId;
+
+        if (sourceIdentity is not { } fixedSourceIdentity
+            || sourceCompanionRowId is not { } fixedSourceCompanionRowId
+            || !Configuration.IsMappingEnabled(fixedSourceCompanionRowId)
+            || !PrototypeContract.TryGetSelectedMapping(
+                fixedSourceCompanionRowId,
+                Configuration.SelectedTargetRowIds,
+                out var mapping))
+        {
+            gposeRepresentation = null;
+            SetGPoseStatus("waiting_for_normal_companion");
+            return;
+        }
+
+        var representation = FindGPoseRepresentation(fixedSourceIdentity);
+        if (representation is null)
+        {
+            gposeRepresentation = null;
+            SetGPoseStatus("waiting_for_unique_representation");
+            return;
+        }
+
+        var identity = ActorIdentity.From(representation);
+        var targetKey = PrototypeContract.GetTargetKey(mapping);
+        if (gposeRepresentation is null
+            || !gposeRepresentation.Identity.Equals(identity)
+            || !gposeRepresentation.SourceIdentity.Equals(fixedSourceIdentity)
+            || gposeRepresentation.SourceCompanionRowId != fixedSourceCompanionRowId
+            || !gposeRepresentation.TargetKey.Equals(targetKey))
+        {
+            gposeRepresentation = new GPoseRepresentationState(
+                identity,
+                fixedSourceIdentity,
+                fixedSourceCompanionRowId,
+                targetKey,
+                ApplyStage.Pending,
+                nint.Zero);
+            Log.Information(
+                "GPose Companion representation resolved. SourceObjectIndex={SourceObjectIndex}, RepresentationObjectIndex={RepresentationObjectIndex}, RepresentationKind={RepresentationKind}, GameObjectId={GameObjectId:X16}, EntityId={EntityId:X8}.",
+                fixedSourceIdentity.ObjectIndex,
+                representation.ObjectIndex,
+                representation.ObjectKind,
+                representation.GameObjectId,
+                representation.EntityId);
+        }
+
+        var state = gposeRepresentation;
+        if (state is null || !TryResolveGPoseRepresentation(state.Identity, out var current))
+        {
+            gposeRepresentation = null;
+            SetGPoseStatus("representation_disappeared");
+            return;
+        }
+
+        var desired = desiredByTarget[state.TargetKey];
+        if (state.Stage == ApplyStage.Redrawn)
+        {
+            PreserveModelScaleIfAvailable(current, mapping.TargetModelScale);
+
+            var gameObject = (GameObject*)current.Address;
+            var currentDrawObject = gameObject == null ? nint.Zero : (nint)gameObject->DrawObject;
+            if (currentDrawObject == nint.Zero || currentDrawObject == state.AppliedDrawObject)
+                return;
+
+            gposeRepresentation = state with
+            {
+                Stage = ApplyStage.Pending,
+                AppliedDrawObject = nint.Zero,
+            };
+            SetGPoseStatus("draw_object_recreated");
+            Log.Information(
+                "GPose Companion DrawObject recreated; reapplying configured NPC. CompanionRowId={CompanionRowId}, OldDrawObject=0x{OldDrawObject:X16}, NewDrawObject=0x{NewDrawObject:X16}.",
+                mapping.SourceCompanionRowId,
+                state.AppliedDrawObject,
+                currentDrawObject);
+            return;
+        }
+
+        if (state.Stage == ApplyStage.Pending)
+        {
+            var gameObject = (GameObject*)current.Address;
+            if (gameObject == null || gameObject->DrawObject == null || gameObject->GetCharacterBase() == null)
+            {
+                SetGPoseStatus("representation_draw_pending");
+                return;
+            }
+
+            if (!TryApplyAppearance(current, desired, mapping.TargetModelScale))
+            {
+                gposeRepresentation = state with { Stage = ApplyStage.Failed };
+                SetGPoseStatus("appearance_apply_failed");
+                Log.Error(
+                    "Failed to apply {TargetName} to the GPose Companion representation.",
+                    mapping.TargetName);
+                return;
+            }
+
+            gposeRepresentation = state with { Stage = ApplyStage.Verify };
+            SetGPoseStatus("appearance_verify_pending");
+            return;
+        }
+
+        if (state.Stage == ApplyStage.Failed)
+            return;
+
+        if (!IsAppearanceApplied(current, desired, mapping.TargetModelScale))
+        {
+            SetGPoseStatus("appearance_verify_pending");
+            return;
+        }
+
+        var verifiedGameObject = (GameObject*)current.Address;
+        var appliedDrawObject = verifiedGameObject == null
+            ? nint.Zero
+            : (nint)verifiedGameObject->DrawObject;
+        if (appliedDrawObject == nint.Zero)
+        {
+            SetGPoseStatus("appearance_verify_pending");
+            return;
+        }
+
+        gposeRepresentation = state with
+        {
+            Stage = ApplyStage.Redrawn,
+            AppliedDrawObject = appliedDrawObject,
+        };
+        SetGPoseStatus("appearance_redrawn");
+        Log.Information(
+            "NPC appearance applied to GPose Companion representation. Companion={CompanionRowId}, Target={TargetKind}#{TargetRowId} ({TargetName}), RepresentationObjectIndex={ObjectIndex}.",
+            mapping.SourceCompanionRowId,
+            mapping.TargetKind,
+            mapping.TargetRowId,
+            mapping.TargetName,
+            current.ObjectIndex);
+    }
+
+    private static IGameObject? FindGPoseRepresentation(ActorIdentity source)
+    {
+        var candidates = ObjectTable
+            .Where(candidate => candidate is ICharacter
+                && candidate.Address != nint.Zero
+                && candidate.IsValid()
+                && candidate.ObjectIndex != source.ObjectIndex
+                && !source.Matches(candidate))
+            .ToArray();
+
+        var match = UniqueCandidate(
+            candidates,
+            candidate => source.GameObjectId != 0 && candidate.GameObjectId == source.GameObjectId);
+        match ??= UniqueCandidate(
+            candidates,
+            candidate => source.EntityId is not 0 and not 0xE0000000
+                && candidate.EntityId == source.EntityId);
+        match ??= UniqueCandidate(
+            candidates,
+            candidate => candidate.BaseId == source.BaseId);
+        return match;
+    }
+
+    private static IGameObject? UniqueCandidate(
+        IEnumerable<IGameObject> candidates,
+        Func<IGameObject, bool> predicate)
+    {
+        using var enumerator = candidates.Where(predicate).Take(2).GetEnumerator();
+        if (!enumerator.MoveNext())
+            return null;
+
+        var first = enumerator.Current;
+        return enumerator.MoveNext() ? null : first;
+    }
+
+    private static bool TryResolveGPoseRepresentation(ActorIdentity identity, out IGameObject actor)
+    {
+        var current = ObjectTable[identity.ObjectIndex];
+        if (current is null
+            || current is not ICharacter
+            || current.Address == nint.Zero
+            || !current.IsValid()
+            || !identity.Matches(current))
+        {
+            actor = null!;
+            return false;
+        }
+
+        actor = current;
+        return true;
+    }
+
+    private void SetGPoseStatus(string status)
+    {
+        if (gposeStatus == status)
+            return;
+
+        gposeStatus = status;
+        Log.Information("GPose Companion representation state changed: {Status}.", status);
     }
 
     private void UpdateTarget(IGameObject? candidate, PrototypeMapping? mapping)
@@ -1457,6 +1692,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         Enabled,
         Verify,
         Redrawn,
+        Failed,
     }
 
     private enum AppearanceFinalizeResult
@@ -1493,6 +1729,14 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private sealed record FailedActorState(
         ActorIdentity Identity,
         PrototypeMapping Mapping);
+
+    private sealed record GPoseRepresentationState(
+        ActorIdentity Identity,
+        ActorIdentity SourceIdentity,
+        uint SourceCompanionRowId,
+        PrototypeTargetKey TargetKey,
+        ApplyStage Stage,
+        nint AppliedDrawObject);
 
     private readonly record struct OwnershipObservation(bool IsOwned, string Evidence);
 

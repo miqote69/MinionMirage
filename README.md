@@ -33,6 +33,7 @@ Minion Mirage is not currently distributed through a public Dalamud repository.
 - Uses the existing game Companion actor instead of creating a separate actor.
 - Supports multiple selectable NPC targets for selected minions.
 - Supports mapping-specific model scale values.
+- Reapplies the selected NPC appearance and scale to the separate visible Companion representation created for GPose.
 - Keeps each minion's normal game summon, replacement, follow, and dismissal behavior.
 - Restores a still-present transformed minion when its mapping is switched off or the plugin unloads.
 
@@ -64,6 +65,7 @@ While loaded, the plugin atomically updates `runtime-state.json` in its Dalamud 
 - FFXIV, Dalamud, or FFXIVClientStructs updates may break native appearance or summon behavior.
 - Visual appearance, equipment availability, and restoration can be affected by game actor recreation or incompatible external changes.
 - The experimental summon unlock is not guaranteed to work in every prohibited area.
+- If GPose does not expose one uniquely matching Companion representation, Minion Mirage leaves it unchanged instead of writing to an ambiguous actor.
 
 ## Documentation
 

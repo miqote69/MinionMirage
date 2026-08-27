@@ -239,7 +239,7 @@ internal static class PrototypeContract
             TargetKind: PrototypeTargetKind.EventNpc,
             TargetRowId: 1031809,
             TargetModelCharaRowId: 2520,
-            TargetName: "ウィンニミイ",
+            TargetName: "ウィン＝ニイ",
             IsHuman: false,
             TargetModelScale: 0.62f,
             AppearanceCategory: PrototypeAppearanceCategory.DemiHuman),

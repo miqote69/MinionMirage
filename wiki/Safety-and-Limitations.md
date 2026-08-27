@@ -10,6 +10,7 @@
 - The game remains responsible for Companion summon, follow, replacement, and dismissal.
 - The plugin does not automatically respawn a dismissed Companion.
 - A failed appearance operation stops further writes for the same failed actor identity.
+- GPose appearance replacement targets only one uniquely resolved Companion representation and does not replace normal-field restoration tracking.
 - Local runtime diagnostics are not uploaded automatically.
 
 ## Current limitations
@@ -19,6 +20,7 @@
 - An unowned minion cannot be summoned until unlocked on the current character.
 - NPC equipment and appearance depend on current game data and may change after an FFXIV update.
 - Actor recreation, territory changes, or incompatible external actor changes can affect appearance persistence or restoration.
+- A GPose Companion remains unchanged when no unique matching representation is available.
 - The experimental summon unlock may fail or crash in minion-prohibited areas.
 - A successful build or `runtime-state.json` update does not prove visual correctness; the result must be checked in game.
 

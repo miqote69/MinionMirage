@@ -11,6 +11,12 @@ Minion Mirage waits for a supported Companion owned by the local player to appea
 
 The game remains responsible for summon, follow, replacement, and dismissal behavior.
 
+## GPose
+
+When GPose creates a separate visible representation for the summoned Companion, Minion Mirage resolves it from the normally tracked Companion and applies the same selected NPC appearance and mapping-specific scale. Normal-field tracking and its captured restoration data remain separate and resume after leaving GPose.
+
+Minion Mirage writes only when one unique GPose representation can be resolved. While the representation is unavailable or ambiguous, it waits without changing another actor.
+
 ## Configuration window
 
 - **Cards / List:** switch between the two layouts with the view icons.
