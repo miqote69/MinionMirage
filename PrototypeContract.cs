@@ -141,7 +141,7 @@ internal static class PrototypeContract
             TargetModelCharaRowId: 4436,
             TargetName: "Gaia",
             IsHuman: false,
-            TargetModelScale: null,
+            TargetModelScale: 0.84f,
             AppearanceCategory: PrototypeAppearanceCategory.DemiHuman),
         new(
             SourceCompanionRowId: 534,

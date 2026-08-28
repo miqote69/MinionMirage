@@ -23,7 +23,7 @@ The fixed prototype mappings are:
 - Companion `331` (`ファースト・ヤ・シュトラ`) to BNpcBase `13910` (Human), using BNpcCustomize `526`, NpcEquip `2269`, and `CharacterBase.ModelScale=1.0f` from the NPC identified in the User-provided Glamourer screenshot.
 - Companion `232` (`マメット・スカアハ`) to BNpcBase `6479`, ModelChara `1689` (Monster).
 - Companion `218` (`ニュー・アリゼー`) to ENpcBase `1017687` (`アリゼー`, Human), matching the clothed Anamnesis NPC appearance, with `CharacterBase.ModelScale=0.97f` to match the User-confirmed current player multiplier.
-- Companion `398` (`マメット・ガイア`) to BNpcBase `17830` (`ガイア`), ModelChara `4436`, Type `2` / Model `1041` / Base `1` / Variant `1` (DemiHuman), as identified in the User-provided screenshot.
+- Companion `398` (`マメット・ガイア`) to BNpcBase `17830` (`ガイア`), ModelChara `4436`, Type `2` / Model `1041` / Base `1` / Variant `1` (DemiHuman), with `CharacterBase.ModelScale=0.84f`, as identified in the User-provided screenshot and scale request.
 - Companion `534` (`マメット・ペルペル`, source ModelChara `4391`) to ENpcBase `1046564` (`物静かなペルペル族`, Human BodyType `4`), as identified in the User-provided screenshot and current runtime state.
 - Companion `325` (`マメット・フラン`, source ModelChara `2412`) to ENpcBase `1025589` (`フラン`), ModelChara `2382`, Type `2` / Model `1034` / Base `1` / Variant `1` (DemiHuman), as identified in the User-provided screenshot and current runtime state.
 - Companion `298` (`マメット・シロ`, source ModelChara `2246`) to ENpcBase `1044638` (`シロ・アリアポー`, Human BodyType `1`), as identified in the User-provided screenshot and current runtime state.
@@ -43,7 +43,7 @@ The protected current thirteen source mappings retain these selected `(SourceCom
 | `331` | `BattleNpc` | `13910` | `0` | `1.0f` |
 | `232` | `BattleNpc` | `6479` | `1689` | `null` |
 | `218` | `EventNpc` | `1017687` | `0` | `0.97f` |
-| `398` | `BattleNpc` | `17830` | `4436` | `null` |
+| `398` | `BattleNpc` | `17830` | `4436` | `0.84f` |
 | `534` | `EventNpc` | `1046564` | `0` | `null` |
 | `325` | `EventNpc` | `1025589` | `2382` | `null` |
 | `298` | `EventNpc` | `1044638` | `0` | `null` |
