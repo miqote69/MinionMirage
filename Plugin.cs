@@ -161,7 +161,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             ConfigCommand,
             new CommandInfo(OnConfigCommand)
             {
-                HelpMessage = "Open Minion Mirage settings.",
+                HelpMessage = "Toggle Minion Mirage settings.",
             });
         Framework.Update += OnFrameworkUpdate;
 
@@ -393,7 +393,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         => configWindow.Toggle();
 
     private void OnConfigCommand(string command, string arguments)
-        => configWindow.IsOpen = true;
+        => configWindow.Toggle();
 
     private bool NormalizeConfiguration()
     {
@@ -843,13 +843,22 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return;
         }
 
+        var desired = desiredByTarget[PrototypeContract.GetTargetKey(state.Mapping)];
         if (state.Stage == ApplyStage.Redrawn)
         {
             PreserveModelScaleIfAvailable(current, state.Mapping.TargetModelScale);
 
             var gameObject = (GameObject*)current.Address;
             var currentDrawObject = gameObject == null ? nint.Zero : (nint)gameObject->DrawObject;
-            if (currentDrawObject == nint.Zero || currentDrawObject == state.AppliedDrawObject)
+            if (currentDrawObject == nint.Zero)
+                return;
+
+            var drawObjectRecreated = currentDrawObject != state.AppliedDrawObject;
+            var appearanceDrifted = !IsAppearanceApplied(
+                current,
+                desired,
+                state.Mapping.TargetModelScale);
+            if (!drawObjectRecreated && !appearanceDrifted)
                 return;
 
             tracked = state with
@@ -857,17 +866,27 @@ public sealed unsafe class Plugin : IDalamudPlugin
                 Stage = ApplyStage.Pending,
                 AppliedDrawObject = nint.Zero,
             };
-            SetTransition("draw_object_recreated");
-            Log.Information(
-                "Companion DrawObject recreated; reapplying configured NPC. CompanionRowId={CompanionRowId}, OldDrawObject=0x{OldDrawObject:X16}, NewDrawObject=0x{NewDrawObject:X16}.",
-                state.Mapping.SourceCompanionRowId,
-                state.AppliedDrawObject,
-                currentDrawObject);
+            if (drawObjectRecreated)
+            {
+                SetTransition("draw_object_recreated");
+                Log.Information(
+                    "Companion DrawObject recreated; reapplying configured NPC. CompanionRowId={CompanionRowId}, OldDrawObject=0x{OldDrawObject:X16}, NewDrawObject=0x{NewDrawObject:X16}.",
+                    state.Mapping.SourceCompanionRowId,
+                    state.AppliedDrawObject,
+                    currentDrawObject);
+            }
+            else
+            {
+                SetTransition("appearance_drift_detected");
+                Log.Information(
+                    "Companion appearance drifted while retaining its DrawObject; reapplying configured NPC. CompanionRowId={CompanionRowId}, DrawObject=0x{DrawObject:X16}.",
+                    state.Mapping.SourceCompanionRowId,
+                    currentDrawObject);
+            }
             return;
         }
 
         var appliedMapping = PrototypeContract.GetAppearanceMapping(state.Mapping);
-        var desired = desiredByTarget[PrototypeContract.GetTargetKey(state.Mapping)];
         if (state.Stage == ApplyStage.Pending)
         {
             if (!TryWrite(current, desired))
