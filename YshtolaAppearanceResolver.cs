@@ -30,11 +30,11 @@ internal static class TargetAppearanceResolver
             throw new InvalidOperationException(
                 $"ENpcBase {row.RowId} does not resolve to a Human ModelChara.");
         if (!mapping.IsHuman && model.Type == 3)
-            return new AppearancePayload(
-                row.ModelChara.RowId,
+            return CreatePayload(
+                model,
                 new byte[26],
                 new ulong[10],
-                IsHuman: false);
+                isHuman: false);
         if (!mapping.IsHuman && model.Type != 2)
             throw new InvalidOperationException(
                 $"ENpcBase {row.RowId} does not resolve to a DemiHuman ModelChara.");
@@ -47,7 +47,7 @@ internal static class TargetAppearanceResolver
                 ? CreateEquipment(referenced)
                 : CreateEquipment(row);
 
-        return new AppearancePayload(row.ModelChara.RowId, customize, equipment, mapping.IsHuman);
+        return CreatePayload(model, customize, equipment, mapping.IsHuman);
     }
 
     private static AppearancePayload ResolveBattleNpc(IDataManager dataManager, PrototypeMapping mapping)
@@ -76,11 +76,11 @@ internal static class TargetAppearanceResolver
                 ?? throw new InvalidOperationException(
                     $"NpcEquip row {row.NpcEquip.RowId} is unavailable for BNpcBase {row.RowId}.");
 
-            return new AppearancePayload(
-                row.ModelChara.RowId,
+            return CreatePayload(
+                model,
                 CreateCustomize(customize),
                 CreateEquipment(equipment),
-                IsHuman: true);
+                isHuman: true);
         }
 
         if (model.Type == 1)
@@ -99,23 +99,32 @@ internal static class TargetAppearanceResolver
                 ?? throw new InvalidOperationException(
                     $"NpcEquip row {row.NpcEquip.RowId} is unavailable for DemiHuman BNpcBase {row.RowId}.");
 
-            return new AppearancePayload(
-                row.ModelChara.RowId,
+            return CreatePayload(
+                model,
                 CreateCustomize(customize),
                 CreateEquipment(equipment),
-                IsHuman: false);
+                isHuman: false);
         }
 
         if (model.Type != 3)
             throw new InvalidOperationException(
                 $"BNpcBase {row.RowId} resolves unsupported non-Human ModelChara type {model.Type}.");
 
-        return new AppearancePayload(
-            row.ModelChara.RowId,
+        return CreatePayload(
+            model,
             new byte[26],
             new ulong[10],
-            IsHuman: false);
+            isHuman: false);
     }
+
+    private static AppearancePayload CreatePayload(ModelChara model, byte[] customize, ulong[] equipment, bool isHuman)
+        => new(
+            model.RowId,
+            customize,
+            equipment,
+            isHuman,
+            model.Type,
+            AppearanceSound.ResolveVoiceId(model.Type, model.SEPack, customize));
 
     private static byte[] CreateCustomize(ENpcBase row)
         =>

@@ -26,6 +26,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
     public const string DisplayName = "Minion Mirage";
     private const string ConfigCommand = "/minionmirage";
     private const int CharacterBaseModelScaleOffset = 0x2A4;
+    // Game 2026.08.11: SetupRaw stores ModelChara.Type here. PlayFootStepSound
+    // reads this cached byte rather than re-resolving ModelCharaId.
+    private const int ModelContainerCachedTypeOffset = 0x20;
     private const uint MinionHiddenActionStatus = 1325;
 
     [PluginService] private static IObjectTable ObjectTable { get; set; } = null!;
@@ -166,8 +169,10 @@ public sealed unsafe class Plugin : IDalamudPlugin
         Framework.Update += OnFrameworkUpdate;
 
         Log.Information(
-            "Minion Mirage loaded. MappingCount={MappingCount}.",
-            PrototypeContract.Mappings.Count);
+            "Minion Mirage loaded. MappingCount={MappingCount}, Version={Version}, ModuleId={ModuleId}.",
+            PrototypeContract.Mappings.Count,
+            DisplayVersion,
+            typeof(Plugin).Module.ModuleVersionId);
         Log.Information("Minion Mirage runtime state: {StateFilePath}", stateReporter.StateFilePath);
         PublishRuntimeState("running", force: true);
     }
@@ -1406,7 +1411,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
             checked((uint)character->ModelContainer.ModelCharaId),
             character->DrawData.CustomizeData.Data.ToArray(),
             character->DrawData.EquipmentModelIds.ToArray().Select(static item => item.Value).ToArray(),
-            characterBase->GetModelType() == CharacterBase.ModelType.Human);
+            characterBase->GetModelType() == CharacterBase.ModelType.Human,
+            *((byte*)&character->ModelContainer + ModelContainerCachedTypeOffset),
+            character->Vfx.VoiceId);
         return appearance.Customize.Length == 26 && appearance.Equipment.Length == 10;
     }
 
@@ -1424,6 +1431,15 @@ public sealed unsafe class Plugin : IDalamudPlugin
         appearance.Customize.AsSpan().CopyTo(character->DrawData.CustomizeData.Data);
         for (var index = 0; index < appearance.Equipment.Length; ++index)
             character->DrawData.EquipmentModelIds[index].Value = appearance.Equipment[index];
+        var cachedType = (byte*)&character->ModelContainer + ModelContainerCachedTypeOffset;
+        var previousType = *cachedType;
+        var previousVoiceId = character->Vfx.VoiceId;
+        *cachedType = appearance.CachedModelType;
+        if (appearance.VoiceId is { } voiceId)
+            character->Vfx.VoiceId = voiceId;
+        Log.Information(
+            "Appearance audio written. ObjectIndex={ObjectIndex}, CachedType={PreviousType}->{CachedType}, VoiceId={PreviousVoiceId}->{VoiceId}.",
+            actor.ObjectIndex, previousType, *cachedType, previousVoiceId, character->Vfx.VoiceId);
         return true;
     }
 
