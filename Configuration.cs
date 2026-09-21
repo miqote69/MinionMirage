@@ -15,6 +15,8 @@ public sealed class Configuration : IPluginConfiguration
 
     public bool ExperimentalEnableNormalCompanionSummon { get; set; }
 
+    public bool UseMinionFootsteps { get; set; } = true;
+
     public bool IsMappingEnabled(uint companionRowId)
         => !DisabledCompanionRowIds.Contains(companionRowId);
 }

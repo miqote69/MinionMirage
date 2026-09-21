@@ -95,8 +95,21 @@ public sealed class ConfigWindow : Window, IDisposable
                 ImGui.EndMenu();
             }
 
+            if (ImGui.BeginMenu($"{plugin.Localizer.Get(UiTextKey.FootstepSound)}###footstep-menu"))
+            {
+                var useMinion = plugin.Configuration.UseMinionFootsteps;
+                if (ImGui.MenuItem(plugin.Localizer.Get(UiTextKey.MinionFootsteps), string.Empty, useMinion))
+                    plugin.SetUseMinionFootsteps(true);
+                if (ImGui.MenuItem(plugin.Localizer.Get(UiTextKey.NpcFootsteps), string.Empty, !useMinion))
+                    plugin.SetUseMinionFootsteps(false);
+                ImGui.EndMenu();
+            }
+
             ImGui.EndMenu();
         }
+
+        if (ImGui.MenuItem($"{plugin.Localizer.Get(UiTextKey.ReleaseNotes)}###release-notes-menu"))
+            plugin.OpenReleaseNotes();
 
         ImGui.EndMenuBar();
     }

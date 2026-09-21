@@ -37,17 +37,21 @@ public sealed unsafe class Plugin : IDalamudPlugin
     [PluginService] private static IClientState ClientState { get; set; } = null!;
     [PluginService] private static ITextureProvider TextureProvider { get; set; } = null!;
     [PluginService] private static IGameInteropProvider GameInteropProvider { get; set; } = null!;
+    [PluginService] private static ISigScanner SigScanner { get; set; } = null!;
     [PluginService] private static ICommandManager CommandManager { get; set; } = null!;
     [PluginService] private static IPluginLog Log { get; set; } = null!;
 
     private readonly IDalamudPluginInterface pluginInterface;
     private readonly IReadOnlyDictionary<PrototypeTargetKey, AppearancePayload> desiredByTarget;
     private readonly IReadOnlyDictionary<uint, uint> sourceModelCharaBySource;
+    private readonly IReadOnlyDictionary<uint, FootstepIdentity> sourceFootsteps;
+    private readonly MinionFootsteps minionFootsteps;
     private readonly IReadOnlyDictionary<uint, ushort> sourceOrderBySource;
     private readonly RuntimeStateReporter stateReporter;
     private readonly Hook<GetActionStatusDelegate>? getActionStatusHook;
     private readonly Hook<UseActionDelegate>? useActionHook;
     private readonly ConfigWindow configWindow;
+    private readonly ReleaseNotesWindow releaseNotesWindow;
     private readonly WindowSystem windowSystem = new("MinionMirage");
     private TrackedActor? tracked;
     private FailedActorState? failedActor;
@@ -92,7 +96,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
             SaveConfiguration();
         Localizer = new Localizer(Configuration, ClientState);
         configWindow = new ConfigWindow(this);
+        releaseNotesWindow = new ReleaseNotesWindow(Localizer);
         windowSystem.AddWindow(configWindow);
+        windowSystem.AddWindow(releaseNotesWindow);
         pluginInterface.UiBuilder.Draw += windowSystem.Draw;
         pluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
 
@@ -117,6 +123,26 @@ public sealed unsafe class Plugin : IDalamudPlugin
             mapping => companionSheet.TryGetRow(mapping.SourceCompanionRowId, out var companion)
                 ? companion.Order
                 : ushort.MaxValue);
+        var modelSheet = DataManager.GetExcelSheet<Lumina.Excel.Sheets.ModelChara>();
+        sourceFootsteps = sourceModelCharaBySource.ToDictionary(
+            entry => entry.Key,
+            entry =>
+            {
+                var model = modelSheet.GetRow(entry.Value);
+                return new FootstepIdentity(model.Type, model.SEPack);
+            });
+        try
+        {
+            minionFootsteps = new MinionFootsteps(ResolveFootstepSource, GameInteropProvider, SigScanner);
+        }
+        catch
+        {
+            pluginInterface.UiBuilder.Draw -= windowSystem.Draw;
+            pluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
+            windowSystem.RemoveAllWindows();
+            configWindow.Dispose();
+            throw;
+        }
         Hook<GetActionStatusDelegate>? createdStatusHook = null;
         Hook<UseActionDelegate>? createdActionHook = null;
         try
@@ -183,6 +209,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return;
 
         disposed = true;
+        minionFootsteps.Dispose();
         Framework.Update -= OnFrameworkUpdate;
         CommandManager.RemoveHandler(ConfigCommand);
         pluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
@@ -225,6 +252,17 @@ public sealed unsafe class Plugin : IDalamudPlugin
         Configuration.UiLanguage = language;
         SaveConfiguration();
     }
+
+    public void SetUseMinionFootsteps(bool enabled)
+    {
+        if (Configuration.UseMinionFootsteps == enabled)
+            return;
+
+        Configuration.UseMinionFootsteps = enabled;
+        SaveConfiguration();
+    }
+
+    public void OpenReleaseNotes() => releaseNotesWindow.IsOpen = true;
 
     public void SetMappingEnabled(uint companionRowId, bool enabled)
     {
@@ -1394,6 +1432,30 @@ public sealed unsafe class Plugin : IDalamudPlugin
             character->CompanionData.CompanionId,
             Hex((ulong)(nuint)character->CompanionData.CompanionObject),
             Hex((ulong)(nuint)character->ChildObject));
+    }
+
+    private FootstepIdentity? ResolveFootstepSource(nint address)
+    {
+        if (disposed || !Configuration.UseMinionFootsteps)
+            return null;
+
+        if (tracked is { } normal
+            && Configuration.IsMappingEnabled(normal.Mapping.SourceCompanionRowId)
+            && TryResolve(normal.Identity, out var actor)
+            && actor.Address == address)
+        {
+            return sourceFootsteps[normal.Mapping.SourceCompanionRowId];
+        }
+
+        if (gposeRepresentation is { } pose
+            && Configuration.IsMappingEnabled(pose.SourceCompanionRowId)
+            && TryResolveGPoseRepresentation(pose.Identity, out var representation)
+            && representation.Address == address)
+        {
+            return sourceFootsteps[pose.SourceCompanionRowId];
+        }
+
+        return null;
     }
 
     private static bool TryCapture(IGameObject actor, out AppearancePayload appearance)

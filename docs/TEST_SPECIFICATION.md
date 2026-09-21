@@ -1,8 +1,46 @@
 # Runtime state reporting test specification
 
+## Minion footstep sound with NPC contacts (2026-09-21)
+
+Current User requirement supersedes beta 9's NPC footstep sound: retain the source
+minion's sound, with contact timing from the displayed NPC's walk/run animation.
+Do not change movement speed, scale, other voices, summon/return, or third-party plugins.
+
+- FOOT-001: On a mapped local Companion's native contact event, forward contact ID
+  and flags exactly once. Override only the sound selection's model type and sound
+  ID with its source Companion ModelChara Type/SEPack. Forward position, surface,
+  race/sex/equipment inputs, movement, volume, scale and category unchanged.
+- FOOT-002: Unmapped/other-owned Actors, mapping OFF, and calls outside that event
+  retain their native arguments. Nested other-Actor events do not inherit the
+  override; after normal completion or an exception, the previous scope is restored.
+  Concurrent threads do not share an event scope. No Character cache is overwritten.
+- FOOT-003: Resolve the source through existing normal/GPose identity tracking;
+  stale identity/address must not select another Actor. Target switching retains
+  the source minion's bank; teardown removes both hooks. Hook initialization failure
+  disposes partially created hooks and does not silently substitute NPC audio.
+- FOOT-004: Read-only native inspection on EXE SHA256
+  `5BBC501DD5C7F22FD61A11D08C25356041D878DB7CD83203ADAE393E4DFACC44`:
+  `PlayFootStepSound=0x1419FA860` calls `0x1404179F0` synchronously.
+  Its stack args at caller +0x28 (model type) and +0x38 (sound ID) select the bank;
+  +0x20 surface and +0x58 contact/movement stay native. Verify both scan signatures
+  uniquely match these functions. No instruction patch or game call for this check.
+- FOOT-005 (Dev listening/visual): Sadu and one differently-scaled NPC walk/run:
+  original minion sound, one sound per audible NPC contact, no independent timer or
+  original-minion extra footsteps. Compare different floors, switch/return, mapping
+  OFF and GPose. Native argument routing tests/build do not establish audible
+  contact alignment. These runtime checks remain UNEXECUTED until observed.
+- FOOT-006: Settings > Footstep sound selects Minion or NPC globally. Minion is
+  the default when the persisted property is absent. Saving/reloading retains
+  either choice. NPC passes native sound selection unchanged; selecting Minion
+  resumes the source-bank override on the next contact, without redraw/resummon,
+  new hooks, speed changes, or configuration changes to other features.
+- UI-NOTES-001: Release notes is a top-level menu item opening a closable window.
+  It shows beta 10 changes distinctly from beta 9, uses
+  the selected UI language, and opens without network access or changing settings.
+
 ## Appearance audio synchronization (beta 9, 2026-09-08)
 
-User-approved scope: update the appearance's cached model type and character sound value on the existing apply/restore path. No PAP/TMB replacement, playback-speed change, summon/lifecycle change, global audio hook, or third-party plugin operation.
+Historical beta 9 scope: update the appearance's cached model type and character sound value on the existing apply/restore path. No PAP/TMB replacement, playback-speed change, summon/lifecycle change, global audio hook, or third-party plugin operation. The 2026-09-21 section above supersedes the footstep-only selection; the other character audio and existing apply/restore path stay unchanged.
 
 - SOUND-001: Resolve Human sound values using the current game's SetupRaw race/sex/tribe rules, not ModelChara 0's SEPack 13001. Ryne ENpcBase 1033894 must resolve type 1 / voice 8804. Check both sexes of all eight races and both Hyur tribe branches; non-Human types retain their ModelChara SEPack. Native out-of-range Human race behavior is no voice assignment, not a newly invented rejection or fallback value.
 - SOUND-002: Capture the original cached type byte and VoiceId from the actual Companion, carry them unchanged across target selection, and restore both through the existing mapping-disable/unload path. Applying a target updates only the existing appearance fields plus these two audio inputs. No new restore/retry/reapply trigger is allowed.
