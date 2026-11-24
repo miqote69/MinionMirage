@@ -333,6 +333,16 @@ internal static class PrototypeContract
             IsHuman: true,
             TargetModelScale: null,
             AppearanceCategory: PrototypeAppearanceCategory.Human),
+        new(
+            SourceCompanionRowId: 589,
+            SourceName: "Wind-up Prishe",
+            TargetKind: PrototypeTargetKind.EventNpc,
+            TargetRowId: 1051492,
+            TargetModelCharaRowId: 4377,
+            TargetName: "Prishe",
+            IsHuman: true,
+            TargetModelScale: null,
+            AppearanceCategory: PrototypeAppearanceCategory.Human),
     ];
 
     private static readonly IReadOnlyDictionary<uint, IReadOnlyList<PrototypeMapping>> TargetCandidatesBySource =

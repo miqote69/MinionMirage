@@ -37,4 +37,5 @@ public enum UiTextKey
     Enabled,
     Disabled,
     NotOwned,
+    ReleaseNotesPrishe,
 }
