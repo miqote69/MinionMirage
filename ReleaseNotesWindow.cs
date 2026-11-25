@@ -29,6 +29,13 @@ internal sealed class ReleaseNotesWindow : Window
     {
         ImGui.TextUnformatted(Plugin.DisplayVersion);
         ImGui.Separator();
+        ImGui.TextWrapped(localizer.Get(UiTextKey.ReleaseNotesTravelRecovery));
+        ImGui.Spacing();
+        ImGui.TextWrapped(localizer.Get(UiTextKey.ReleaseNotesLeader));
+        ImGui.Spacing();
+        ImGui.Spacing();
+        ImGui.TextUnformatted("0.1.0-beta.11");
+        ImGui.Separator();
         ImGui.TextWrapped(localizer.Get(UiTextKey.ReleaseNotesPrishe));
         ImGui.Spacing();
         ImGui.Spacing();

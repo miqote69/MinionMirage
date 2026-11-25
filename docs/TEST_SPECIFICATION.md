@@ -1,5 +1,30 @@
 # Runtime state reporting test specification
 
+## Wind-up Leader selection (2026-09-21)
+
+- LEADER-001: One Leader card/list row uses Companion 71's name/icon/order/unlock.
+  Its three NPC choices are Kan-E-Senna (73 -> ENpc 1026816), Merlwyb
+  (72 -> ENpc 1002441), and Raubahn (74 -> ENpc 1003786), confirmed from local EXD.
+  Existing Kan-E-Senna enable/disable state is retained as the group's setting.
+- LEADER-002: A Companion action 71 retains its native eligibility/ownership check;
+  native rows 72/73/74 have no independent unlock bits. When native status is 0, or
+  is 1325 with the existing experiment enabled, pass the saved actual row once to
+  the existing local SetupCompanion transition (parameter 1). Do not also execute
+  native action 71, which would choose the Grand Company leader. Other status
+  results, non-Leader actions and disabled Leader mapping retain the original
+  action path. Experiment OFF does not bypass prohibited-area status 1325.
+- LEADER-003: A repeated selected Companion dismisses; a different selection replaces.
+  An ID retained without a CompanionObject must summon, not dismiss. Selection alone
+  saves configuration and does not call an action, redraw, or create an Actor.
+- LEADER-004: Actual rows 72/73/74 keep separate source model/sound and NPC payloads.
+  Existing owner/identity tracking and restoration are reused without new timers,
+  monitoring, or third-party plugin operations.
+- LEADER-005 (runtime/visual): Verify three choices through the game Leader button,
+  repeated return, choice change, other-minion switch, and experiment OFF/ON in
+  ordinary and prohibited areas. Confirm the GUI icon/ownership and NPC equipment.
+  Offline tests/build/static review do not establish this acceptance; UNEXECUTED
+  until observed in game.
+
 ## Minion footstep sound with NPC contacts (2026-09-21)
 
 Current User requirement supersedes beta 9's NPC footstep sound: retain the source

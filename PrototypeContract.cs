@@ -294,6 +294,26 @@ internal static class PrototypeContract
             TargetModelScale: null,
             AppearanceCategory: PrototypeAppearanceCategory.Human),
         new(
+            SourceCompanionRowId: 72,
+            SourceName: "Merlwyb",
+            TargetKind: PrototypeTargetKind.EventNpc,
+            TargetRowId: 1002441,
+            TargetModelCharaRowId: 0,
+            TargetName: "Merlwyb",
+            IsHuman: true,
+            TargetModelScale: null,
+            AppearanceCategory: PrototypeAppearanceCategory.Human),
+        new(
+            SourceCompanionRowId: 74,
+            SourceName: "Raubahn",
+            TargetKind: PrototypeTargetKind.EventNpc,
+            TargetRowId: 1003786,
+            TargetModelCharaRowId: 0,
+            TargetName: "Raubahn",
+            IsHuman: true,
+            TargetModelScale: null,
+            AppearanceCategory: PrototypeAppearanceCategory.Human),
+        new(
             SourceCompanionRowId: 145,
             SourceName: "Ysayle",
             TargetKind: PrototypeTargetKind.EventNpc,
@@ -344,6 +364,15 @@ internal static class PrototypeContract
             TargetModelScale: null,
             AppearanceCategory: PrototypeAppearanceCategory.Human),
     ];
+
+    // One visible Leader card; the three actual Companion rows remain distinct
+    // for appearance, source footsteps, tracking, and restoration.
+    public static IReadOnlyList<PrototypeMapping> DisplayMappings { get; } =
+        Mappings.Where(mapping => mapping.SourceCompanionRowId is not (72 or 74)).ToArray();
+
+    public static IReadOnlyList<PrototypeMapping> LeaderCandidates { get; } =
+        new uint[] { 73, 72, 74 }
+            .Select(id => Mappings.Single(mapping => mapping.SourceCompanionRowId == id)).ToArray();
 
     private static readonly IReadOnlyDictionary<uint, IReadOnlyList<PrototypeMapping>> TargetCandidatesBySource =
         new Dictionary<uint, IReadOnlyList<PrototypeMapping>>

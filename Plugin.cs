@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Command;
@@ -35,6 +36,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     [PluginService] private static IFramework Framework { get; set; } = null!;
     [PluginService] private static IDataManager DataManager { get; set; } = null!;
     [PluginService] private static IClientState ClientState { get; set; } = null!;
+    [PluginService] private static ICondition ConditionState { get; set; } = null!;
     [PluginService] private static ITextureProvider TextureProvider { get; set; } = null!;
     [PluginService] private static IGameInteropProvider GameInteropProvider { get; set; } = null!;
     [PluginService] private static ISigScanner SigScanner { get; set; } = null!;
@@ -53,6 +55,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private readonly ConfigWindow configWindow;
     private readonly ReleaseNotesWindow releaseNotesWindow;
     private readonly WindowSystem windowSystem = new("MinionMirage");
+    private readonly CompanionTravel companionTravel = new();
+    private AcceptedCompanionAction? acceptedCompanionAction;
     private TrackedActor? tracked;
     private FailedActorState? failedActor;
     private GPoseRepresentationState? gposeRepresentation;
@@ -120,7 +124,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
                         $"Companion {mapping.SourceCompanionRowId} has no source ModelChara."));
         sourceOrderBySource = PrototypeContract.Mappings.ToDictionary(
             mapping => mapping.SourceCompanionRowId,
-            mapping => companionSheet.TryGetRow(mapping.SourceCompanionRowId, out var companion)
+            mapping => companionSheet.TryGetRow(mapping.SourceCompanionRowId == 73 ? 71u : mapping.SourceCompanionRowId, out var companion)
                 ? companion.Order
                 : ushort.MaxValue);
         var modelSheet = DataManager.GetExcelSheet<Lumina.Excel.Sheets.ModelChara>();
@@ -155,6 +159,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
                 UseActionDetour);
             getActionStatusHook = createdStatusHook;
             useActionHook = createdActionHook;
+            // Leader selection is independent of the prohibited-area experiment.
+            useActionHook.Enable();
             if (Configuration.ExperimentalEnableNormalCompanionSummon)
             {
                 Volatile.Write(ref normalSummonUnlockEnabled, 1);
@@ -278,6 +284,17 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     public void SetSelectedTarget(uint sourceCompanionRowId, uint targetRowId)
     {
+        if (sourceCompanionRowId == 73)
+        {
+            var leader = PrototypeContract.LeaderCandidates.FirstOrDefault(candidate => candidate.TargetRowId == targetRowId);
+            if (leader is not null && Configuration.SelectedLeaderCompanionRowId != leader.SourceCompanionRowId)
+            {
+                Configuration.SelectedLeaderCompanionRowId = leader.SourceCompanionRowId;
+                SaveConfiguration();
+            }
+            return;
+        }
+
         if (!PrototypeContract.HasMultipleTargetCandidates(sourceCompanionRowId)
             || !PrototypeContract.TryGetTargetCandidate(sourceCompanionRowId, targetRowId, out _)
             || (Configuration.SelectedTargetRowIds.TryGetValue(sourceCompanionRowId, out var current)
@@ -315,7 +332,6 @@ public sealed unsafe class Plugin : IDalamudPlugin
             {
                 Volatile.Write(ref normalSummonUnlockEnabled, 0);
                 getActionStatusHook.Disable();
-                useActionHook.Disable();
             }
 
             Configuration.ExperimentalEnableNormalCompanionSummon = enabled;
@@ -347,7 +363,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     public void SetAllMappingsEnabled(bool enabled)
     {
         var changed = false;
-        foreach (var mapping in PrototypeContract.Mappings)
+        foreach (var mapping in PrototypeContract.DisplayMappings)
         {
             changed |= enabled
                 ? Configuration.DisabledCompanionRowIds.Remove(mapping.SourceCompanionRowId)
@@ -363,7 +379,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         try
         {
             if (DataManager.GetExcelSheet<CompanionSheet>(ClientState.ClientLanguage)
-                .TryGetRow(mapping.SourceCompanionRowId, out var companion))
+                .TryGetRow(mapping.SourceCompanionRowId == 73 ? 71u : mapping.SourceCompanionRowId, out var companion))
             {
                 var name = companion.Singular.ToString();
                 if (!string.IsNullOrWhiteSpace(name))
@@ -387,8 +403,13 @@ public sealed unsafe class Plugin : IDalamudPlugin
     internal bool IsCompanionUnlocked(uint companionRowId)
     {
         var uiState = UIState.Instance();
-        return uiState == null || uiState->IsCompanionUnlocked(companionRowId);
+        return uiState == null || uiState->IsCompanionUnlocked(companionRowId is 72 or 73 or 74 ? 71u : companionRowId);
     }
+
+    internal PrototypeMapping GetDisplayedMapping(PrototypeMapping sourceMapping)
+        => sourceMapping.SourceCompanionRowId == 73
+            ? PrototypeContract.LeaderCandidates.Single(candidate => candidate.SourceCompanionRowId == Configuration.SelectedLeaderCompanionRowId)
+            : GetSelectedMapping(sourceMapping);
 
     internal PrototypeMapping GetSelectedMapping(PrototypeMapping sourceMapping)
         => PrototypeContract.GetSelectedMapping(
@@ -396,7 +417,15 @@ public sealed unsafe class Plugin : IDalamudPlugin
             Configuration.SelectedTargetRowIds);
 
     internal IReadOnlyList<PrototypeMapping> GetTargetCandidates(PrototypeMapping sourceMapping)
-        => PrototypeContract.GetTargetCandidates(sourceMapping.SourceCompanionRowId);
+        => sourceMapping.SourceCompanionRowId == 73
+            ? PrototypeContract.LeaderCandidates
+            : PrototypeContract.GetTargetCandidates(sourceMapping.SourceCompanionRowId);
+
+    internal string GetTargetName(PrototypeMapping mapping)
+        => mapping.SourceCompanionRowId is 72 or 73 or 74
+            ? DataManager.GetExcelSheet<Lumina.Excel.Sheets.ENpcResident>(ClientState.ClientLanguage)
+                .GetRow(mapping.TargetRowId).Singular.ToString()
+            : mapping.TargetName;
 
     internal bool IsYoungHuman(PrototypeMapping mapping)
     {
@@ -507,7 +536,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
         {
             lastScan = ScanTargets();
             UpdateNormalSummonUnlockState();
-            if (ClientState.IsGPosing)
+            var isGPosing = ClientState.IsGPosing;
+            UpdateCompanionTravel(lastScan, isGPosing);
+            if (isGPosing)
                 UpdateGPoseRepresentation(lastScan);
             else
             {
@@ -529,6 +560,56 @@ public sealed unsafe class Plugin : IDalamudPlugin
         {
             PublishRuntimeState(lastError is null ? "running" : "error");
         }
+    }
+
+    private void UpdateCompanionTravel(TargetScanResult scan, bool isGPosing)
+    {
+        var action = Interlocked.Exchange(ref acceptedCompanionAction, null);
+        if (!ClientState.IsLoggedIn || isGPosing || useActionHook?.IsEnabled != true)
+        {
+            companionTravel.Reset();
+            return;
+        }
+
+        if (action is not null)
+            companionTravel.CancelForAction(action);
+
+        var localPlayer = ObjectTable.LocalPlayer;
+        var gameMain = GameMain.Instance();
+        var territory = gameMain == null ? 0 : gameMain->CurrentTerritoryTypeId;
+        var betweenAreas = ConditionState[ConditionFlag.BetweenAreas] || ConditionState[ConditionFlag.BetweenAreas51];
+        var sceneReady = territory != 0 && gameMain->TerritoryLoadState == 2
+            && localPlayer is not null && localPlayer.Address != nint.Zero && localPlayer.IsValid();
+        var recovery = companionTravel.Observe(
+            territory,
+            betweenAreas,
+            sceneReady,
+            scan.OwnedCompanion?.Snapshot,
+            scan.HasCompanion);
+        if (recovery is not { } request || Volatile.Read(ref acceptedCompanionAction) is not null)
+            return;
+
+        if (request.RedrawExisting && scan.OwnedCompanion is { } owned)
+        {
+            if (tracked is { Stage: not ApplyStage.Redrawn } applying && applying.Identity.Matches(owned.Actor))
+                return; // The existing appearance apply already owns DrawObject creation.
+
+            var scale = scan.Candidate?.Address == owned.Snapshot.Address ? scan.Mapping?.TargetModelScale : null;
+            if (TryEnableAppearanceDraw(owned.Actor, scale))
+            {
+                SetTransition("travel_companion_draw_enabled");
+                Log.Information("Companion draw enabled after travel. CompanionRowId={CompanionRowId}.", request.RowId);
+            }
+            return;
+        }
+
+        var character = (Character*)localPlayer!.Address;
+        if (character->CompanionData.CompanionObject != null)
+            return;
+
+        character->CompanionData.SetupCompanion(unchecked((short)request.RowId), 1);
+        SetTransition("travel_companion_recreation_requested");
+        Log.Information("Companion recreation requested after travel. CompanionRowId={CompanionRowId}.", request.RowId);
     }
 
     private void UpdateGPoseRepresentation(TargetScanResult normalScan)
@@ -1095,9 +1176,14 @@ public sealed unsafe class Plugin : IDalamudPlugin
     {
         var localPlayer = ObjectTable.LocalPlayer;
         var localPlayerAvailable = localPlayer is not null && localPlayer.Address != nint.Zero;
+        var attachedCompanion = localPlayerAvailable
+            ? (nint)((Character*)localPlayer!.Address)->CompanionData.CompanionObject
+            : nint.Zero;
         var observations = new List<CompanionRuntimeObservation>();
         var ownedTargets = new List<TargetCandidate>();
         var validSourceCount = 0;
+        var ownedCount = 0;
+        IGameObject? ownedCompanion = null;
 
         foreach (var candidate in ObjectTable)
         {
@@ -1107,6 +1193,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
             var valid = candidate.Address != nint.Zero && candidate.IsValid();
             var ownership = ObserveOwnership(candidate, localPlayerAvailable ? localPlayer : null, valid);
             observations.Add(ObserveCompanion(candidate, valid, ownership));
+            if (ownership.IsOwned)
+            {
+                ownedCount++;
+                if (ownedCount == 1 || candidate.Address == attachedCompanion)
+                    ownedCompanion = candidate;
+            }
 
             if (!valid
                 || !PrototypeContract.TryGetMapping(candidate.BaseId, out _)
@@ -1142,12 +1234,34 @@ public sealed unsafe class Plugin : IDalamudPlugin
             ? ObserveLocalPlayer(localPlayer!)
             : null;
 
+        ObservedTravelCompanion? travelCompanion = null;
+        if (ownedCompanion is not null && (ownedCount == 1 || ownedCompanion.Address == attachedCompanion))
+        {
+            travelCompanion = new ObservedTravelCompanion(
+                ownedCompanion, ObserveTravelCompanion((GameObject*)ownedCompanion.Address));
+        }
+
         return new TargetScanResult(
             ownedTargets.Count == 1 ? ownedTargets[0].Actor : null,
             ownedTargets.Count == 1 ? ownedTargets[0].Mapping : null,
             localPlayerObservation,
             selectionState,
-            observations);
+            observations,
+            travelCompanion,
+            attachedCompanion != nint.Zero || ownedCount > 0);
+    }
+
+    private static TravelCompanion ObserveTravelCompanion(GameObject* actor)
+        => new(actor->BaseId, (nint)actor,
+            actor->DrawObject != null && (actor->RenderFlags & NativeVisibilityFlags.Model) == 0);
+
+    private static TravelCompanion? ObserveAttachedCompanion()
+    {
+        if (ObjectTable.LocalPlayer is not { } player || player.Address == nint.Zero)
+            return null;
+
+        var actor = (GameObject*)((Character*)player.Address)->CompanionData.CompanionObject;
+        return actor == null ? null : ObserveTravelCompanion(actor);
     }
 
     private void UpdateNormalSummonUnlockState()
@@ -1210,9 +1324,14 @@ public sealed unsafe class Plugin : IDalamudPlugin
         uint comboRouteId,
         bool* outOptAreaTargeted)
     {
+        var isCompanionAction = actionType == ActionType.Companion;
+        var resolvedActionId = isCompanionAction
+            ? Configuration.ResolveCompanionAction(actionId)
+            : actionId;
+        var leaderSelection = actionId == 71 && resolvedActionId != actionId;
         var unlockCompanionAction = Volatile.Read(ref normalSummonUnlockEnabled) == 1
-            && actionType == ActionType.Companion;
-        var originalStatus = unlockCompanionAction
+            && isCompanionAction;
+        var originalStatus = unlockCompanionAction || leaderSelection
             ? getActionStatusHook!.Original(
                 actionManager,
                 actionType,
@@ -1222,6 +1341,18 @@ public sealed unsafe class Plugin : IDalamudPlugin
                 true,
                 null)
             : 0;
+
+        if (leaderSelection && Configuration.UseLocalLeaderTransition(originalStatus))
+        {
+            // Only row 71 is unlockable. Keep its native eligibility result,
+            // then supply the selected real row to the existing local transition.
+            // Do not also execute row 71: it would summon the Grand Company choice.
+            Volatile.Write(ref normalSummonLastIconClickRowId, unchecked((int)actionId));
+            Interlocked.Increment(ref normalSummonIconClickCount);
+            return InvokeLocalCompanionTransition(actionId, resolvedActionId, true);
+        }
+
+        var previousCompanion = isCompanionAction ? ObserveAttachedCompanion() : null;
         var originalResult = useActionHook!.Original(
             actionManager,
             actionType,
@@ -1231,6 +1362,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
             mode,
             comboRouteId,
             outOptAreaTargeted);
+        if (isCompanionAction && originalResult)
+            Volatile.Write(ref acceptedCompanionAction, new AcceptedCompanionAction(previousCompanion));
+
         if (!unlockCompanionAction)
         {
             return originalResult;
@@ -1246,6 +1380,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return originalResult;
         }
 
+        var previousNativeCompanion = ObserveAttachedCompanion();
         var nativeResult = actionManager->UseActionLocation(
             actionType,
             actionId,
@@ -1262,8 +1397,16 @@ public sealed unsafe class Plugin : IDalamudPlugin
             originalResult,
             nativeResult);
         if (nativeResult)
+        {
+            Volatile.Write(ref acceptedCompanionAction, new AcceptedCompanionAction(previousNativeCompanion));
             return true;
+        }
 
+        return InvokeLocalCompanionTransition(actionId, actionId, false);
+    }
+
+    private bool InvokeLocalCompanionTransition(uint clickedActionId, uint actionId, bool leaderSelection)
+    {
         if (ObjectTable.LocalPlayer is not { } localPlayer || localPlayer.Address == nint.Zero)
         {
             Volatile.Write(ref normalSummonLastIconClickResult, "local_companion_unavailable");
@@ -1274,12 +1417,15 @@ public sealed unsafe class Plugin : IDalamudPlugin
         {
             var character = (Character*)localPlayer.Address;
             var activeCompanionRowId = character->CompanionData.CompanionId;
-            var requestedCompanionRowId = activeCompanionRowId == actionId
-                ? 0u
-                : actionId;
+            var requestedCompanionRowId = leaderSelection
+                ? Configuration.GetLeaderTransition(actionId, activeCompanionRowId, character->CompanionData.CompanionObject != null)
+                : activeCompanionRowId == actionId ? 0u : actionId;
+            var previousCompanion = ObserveAttachedCompanion();
             character->CompanionData.SetupCompanion(
                 unchecked((short)requestedCompanionRowId),
                 1);
+            Volatile.Write(ref acceptedCompanionAction, new AcceptedCompanionAction(
+                previousCompanion, requestedCompanionRowId == 0 ? null : requestedCompanionRowId));
 
             var result = requestedCompanionRowId == 0
                 ? "local_companion_dismiss_invoked"
@@ -1289,7 +1435,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             Volatile.Write(ref normalSummonLastIconClickResult, result);
             Log.Information(
                 "Companion click local transition invoked. ClickedCompanionRowId={ClickedCompanionRowId}, ActiveCompanionRowId={ActiveCompanionRowId}, RequestedCompanionRowId={RequestedCompanionRowId}, TransitionParameter=1, Result={Result}.",
-                actionId,
+                clickedActionId,
                 activeCompanionRowId,
                 requestedCompanionRowId,
                 result);
@@ -1849,16 +1995,19 @@ public sealed unsafe class Plugin : IDalamudPlugin
         nint AppliedDrawObject);
 
     private readonly record struct OwnershipObservation(bool IsOwned, string Evidence);
+    private readonly record struct ObservedTravelCompanion(IGameObject Actor, TravelCompanion Snapshot);
 
     private sealed record TargetScanResult(
         IGameObject? Candidate,
         PrototypeMapping? Mapping,
         LocalPlayerRuntimeObservation? LocalPlayer,
         string SelectionState,
-        IReadOnlyList<CompanionRuntimeObservation> Companions)
+        IReadOnlyList<CompanionRuntimeObservation> Companions,
+        ObservedTravelCompanion? OwnedCompanion,
+        bool HasCompanion)
     {
         public static TargetScanResult NotStarted { get; } =
-            new(null, null, null, "not_started", Array.Empty<CompanionRuntimeObservation>());
+            new(null, null, null, "not_started", Array.Empty<CompanionRuntimeObservation>(), null, false);
     }
 
     private sealed record TargetCandidate(IGameObject Actor, PrototypeMapping Mapping);

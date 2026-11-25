@@ -38,4 +38,6 @@ public enum UiTextKey
     Disabled,
     NotOwned,
     ReleaseNotesPrishe,
+    ReleaseNotesTravelRecovery,
+    ReleaseNotesLeader,
 }

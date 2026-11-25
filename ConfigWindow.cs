@@ -42,13 +42,13 @@ public sealed class ConfigWindow : Window, IDisposable
     {
         DrawMenuBar();
 
-        var mappings = PrototypeContract.Mappings
+        var mappings = PrototypeContract.DisplayMappings
             .OrderBy(plugin.GetCompanionOrder)
             .ThenBy(mapping => mapping.SourceCompanionRowId)
             .Where(MatchesFilter)
             .Where(MatchesSearch)
             .ToArray();
-        var activeCount = PrototypeContract.Mappings.Count(mapping =>
+        var activeCount = PrototypeContract.DisplayMappings.Count(mapping =>
             plugin.Configuration.IsMappingEnabled(mapping.SourceCompanionRowId));
 
         DrawSearch(activeCount);
@@ -151,7 +151,7 @@ public sealed class ConfigWindow : Window, IDisposable
         var countText = plugin.Localizer.Get(
             UiTextKey.ActiveMappings,
             activeCount,
-            PrototypeContract.Mappings.Count);
+            PrototypeContract.DisplayMappings.Count);
         var countWidth = ImGui.CalcTextSize(countText).X;
         var searchWidth = Math.Max(220.0f, availableWidth - countWidth - ImGui.GetStyle().ItemSpacing.X);
 
@@ -176,7 +176,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.TextDisabled(plugin.Localizer.Get(
             UiTextKey.VisibleMappings,
             visibleCount,
-            PrototypeContract.Mappings.Count));
+            PrototypeContract.DisplayMappings.Count));
 
         ImGui.Spacing();
         if (ImGui.Button($"{plugin.Localizer.Get(UiTextKey.DisableAll)}###disable-all"))
@@ -194,7 +194,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.Spacing();
         var filters = new[]
         {
-            (MappingFilter.All, UiTextKey.All, PrototypeContract.Mappings.Count),
+            (MappingFilter.All, UiTextKey.All, PrototypeContract.DisplayMappings.Count),
             (MappingFilter.AdultHuman, UiTextKey.AdultHuman, CountGroup(MappingGroup.AdultHuman)),
             (MappingFilter.YoungHuman, UiTextKey.YoungHuman, CountGroup(MappingGroup.YoungHuman)),
             (MappingFilter.DemiHuman, UiTextKey.DemiHuman, CountGroup(MappingGroup.DemiHuman)),
@@ -272,7 +272,7 @@ public sealed class ConfigWindow : Window, IDisposable
 
     private void DrawCard(PrototypeMapping mapping)
     {
-        var selectedMapping = plugin.GetSelectedMapping(mapping);
+        var selectedMapping = plugin.GetDisplayedMapping(mapping);
         var group = GetMappingGroup(selectedMapping);
         var isUnlocked = plugin.IsCompanionUnlocked(mapping.SourceCompanionRowId);
         var accent = isUnlocked ? GetAccentColor(group) : UnownedAccent;
@@ -335,7 +335,7 @@ public sealed class ConfigWindow : Window, IDisposable
 
         foreach (var mapping in mappings)
         {
-            var selectedMapping = plugin.GetSelectedMapping(mapping);
+            var selectedMapping = plugin.GetDisplayedMapping(mapping);
             var group = GetMappingGroup(selectedMapping);
             var isUnlocked = plugin.IsCompanionUnlocked(mapping.SourceCompanionRowId);
             var accent = isUnlocked ? GetAccentColor(group) : UnownedAccent;
@@ -375,7 +375,7 @@ public sealed class ConfigWindow : Window, IDisposable
         if (!isUnlocked)
             ImGui.PushStyleVar(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * 0.42f);
 
-        if (plugin.TryGetCompanionIcon(mapping.SourceCompanionRowId, out var icon))
+        if (plugin.TryGetCompanionIcon(mapping.SourceCompanionRowId == 73 ? 71u : mapping.SourceCompanionRowId, out var icon))
             ImGui.Image(icon!.Handle, size);
         else
             ImGui.Dummy(size);
@@ -394,21 +394,21 @@ public sealed class ConfigWindow : Window, IDisposable
         {
             ImGui.TextColored(
                 MutedText,
-                $"{plugin.Localizer.Get(UiTextKey.Target)}: {selectedMapping.TargetName}");
+                $"{plugin.Localizer.Get(UiTextKey.Target)}: {plugin.GetTargetName(selectedMapping)}");
             return;
         }
 
         ImGui.TextDisabled($"{plugin.Localizer.Get(UiTextKey.Target)}:");
         ImGui.SameLine(0, 4.0f);
         ImGui.SetNextItemWidth(comboWidth);
-        if (!ImGui.BeginCombo("##target-selection", selectedMapping.TargetName))
+        if (!ImGui.BeginCombo("##target-selection", plugin.GetTargetName(selectedMapping)))
             return;
 
         foreach (var candidate in candidates)
         {
             var isSelected = PrototypeContract.GetTargetKey(candidate)
                 == PrototypeContract.GetTargetKey(selectedMapping);
-            if (ImGui.Selectable($"{candidate.TargetName} ({candidate.TargetRowId})", isSelected))
+            if (ImGui.Selectable($"{plugin.GetTargetName(candidate)} ({candidate.TargetRowId})", isSelected))
                 plugin.SetSelectedTarget(sourceMapping.SourceCompanionRowId, candidate.TargetRowId);
 
             if (isSelected)
@@ -478,23 +478,24 @@ public sealed class ConfigWindow : Window, IDisposable
         return plugin.GetCompanionName(mapping).Contains(searchText, StringComparison.OrdinalIgnoreCase)
             || mapping.SourceName.Contains(searchText, StringComparison.OrdinalIgnoreCase)
             || plugin.GetTargetCandidates(mapping).Any(candidate =>
-                candidate.TargetName.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+                plugin.GetTargetName(candidate).Contains(searchText, StringComparison.OrdinalIgnoreCase)
+                || candidate.TargetName.Contains(searchText, StringComparison.OrdinalIgnoreCase));
     }
 
     private bool MatchesFilter(PrototypeMapping mapping)
         => selectedFilter switch
         {
             MappingFilter.All => true,
-            MappingFilter.AdultHuman => GetMappingGroup(plugin.GetSelectedMapping(mapping)) == MappingGroup.AdultHuman,
-            MappingFilter.YoungHuman => GetMappingGroup(plugin.GetSelectedMapping(mapping)) == MappingGroup.YoungHuman,
-            MappingFilter.DemiHuman => GetMappingGroup(plugin.GetSelectedMapping(mapping)) == MappingGroup.DemiHuman,
-            MappingFilter.Monster => GetMappingGroup(plugin.GetSelectedMapping(mapping)) == MappingGroup.Monster,
+            MappingFilter.AdultHuman => GetMappingGroup(plugin.GetDisplayedMapping(mapping)) == MappingGroup.AdultHuman,
+            MappingFilter.YoungHuman => GetMappingGroup(plugin.GetDisplayedMapping(mapping)) == MappingGroup.YoungHuman,
+            MappingFilter.DemiHuman => GetMappingGroup(plugin.GetDisplayedMapping(mapping)) == MappingGroup.DemiHuman,
+            MappingFilter.Monster => GetMappingGroup(plugin.GetDisplayedMapping(mapping)) == MappingGroup.Monster,
             _ => true,
         };
 
     private int CountGroup(MappingGroup group)
-        => PrototypeContract.Mappings.Count(mapping =>
-            GetMappingGroup(plugin.GetSelectedMapping(mapping)) == group);
+        => PrototypeContract.DisplayMappings.Count(mapping =>
+            GetMappingGroup(plugin.GetDisplayedMapping(mapping)) == group);
 
     private MappingGroup GetMappingGroup(PrototypeMapping mapping)
         => mapping.AppearanceCategory switch
